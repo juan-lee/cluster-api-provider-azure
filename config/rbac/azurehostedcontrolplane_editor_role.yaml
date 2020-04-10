@@ -1,0 +1,24 @@
+# permissions for end users to edit azurehostedcontrolplanes.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: azurehostedcontrolplane-editor-role
+rules:
+- apiGroups:
+  - infrastructure.x-k8s.io
+  resources:
+  - azurehostedcontrolplanes
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - infrastructure.x-k8s.io
+  resources:
+  - azurehostedcontrolplanes/status
+  verbs:
+  - get

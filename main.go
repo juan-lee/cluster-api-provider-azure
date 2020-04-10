@@ -31,16 +31,17 @@ import (
 	cgrecord "k8s.io/client-go/tools/record"
 	"k8s.io/klog"
 	"k8s.io/klog/klogr"
-	infrav1alpha2 "sigs.k8s.io/cluster-api-provider-azure/api/v1alpha2"
-	infrastructurev1alpha3 "sigs.k8s.io/cluster-api-provider-azure/api/v1alpha3"
-	infrav1alpha3 "sigs.k8s.io/cluster-api-provider-azure/api/v1alpha3"
-	"sigs.k8s.io/cluster-api-provider-azure/controllers"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1alpha3"
 	"sigs.k8s.io/cluster-api/feature"
 	"sigs.k8s.io/cluster-api/util/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+
+	infrav1alpha2 "sigs.k8s.io/cluster-api-provider-azure/api/v1alpha2"
+	infrastructurev1alpha3 "sigs.k8s.io/cluster-api-provider-azure/api/v1alpha3"
+	infrav1alpha3 "sigs.k8s.io/cluster-api-provider-azure/api/v1alpha3"
+	"sigs.k8s.io/cluster-api-provider-azure/controllers"
 )
 
 var (
@@ -206,6 +207,14 @@ func main() {
 			setupLog.Error(err, "unable to create webhook", "webhook", "AzureMachineTemplate")
 			os.Exit(1)
 		}
+	}
+	if err = (&controllers.AzureHostedControlPlaneReconciler{
+		Client: mgr.GetClient(),
+		Log:    ctrl.Log.WithName("controllers").WithName("AzureHostedControlPlane"),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "AzureHostedControlPlane")
+		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
 
