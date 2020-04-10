@@ -434,6 +434,8 @@ spec:
                 - host
                 - port
                 type: object
+              isHostedControlPlane:
+                type: boolean
               location:
                 type: string
               networkSpec:
@@ -558,6 +560,7 @@ spec:
               resourceGroup:
                 type: string
             required:
+            - isHostedControlPlane
             - location
             - resourceGroup
             type: object

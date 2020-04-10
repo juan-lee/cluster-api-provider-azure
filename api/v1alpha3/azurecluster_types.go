@@ -44,6 +44,8 @@ type AzureClusterSpec struct {
 	// ones added by default.
 	// +optional
 	AdditionalTags Tags `json:"additionalTags,omitempty"`
+
+	IsHostedControlPlane bool `json:"isHostedControlPlane"`
 }
 
 // AzureClusterStatus defines the observed state of AzureCluster

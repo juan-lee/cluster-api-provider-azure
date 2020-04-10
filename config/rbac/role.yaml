@@ -83,3 +83,23 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - infrastructure.x-k8s.io
+  resources:
+  - azurehostedcontrolplanes
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - infrastructure.x-k8s.io
+  resources:
+  - azurehostedcontrolplanes/status
+  verbs:
+  - get
+  - patch
+  - update
