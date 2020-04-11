@@ -5,7 +5,7 @@ metadata:
   name: azurehostedcontrolplane-editor-role
 rules:
 - apiGroups:
-  - infrastructure.x-k8s.io
+  - infrastructure.cluster.x-k8s.io
   resources:
   - azurehostedcontrolplanes
   verbs:
@@ -17,7 +17,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - infrastructure.x-k8s.io
+  - infrastructure.cluster.x-k8s.io
   resources:
   - azurehostedcontrolplanes/status
   verbs:

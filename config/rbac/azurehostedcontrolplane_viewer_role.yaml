@@ -5,7 +5,7 @@ metadata:
   name: azurehostedcontrolplane-viewer-role
 rules:
 - apiGroups:
-  - infrastructure.x-k8s.io
+  - infrastructure.cluster.x-k8s.io
   resources:
   - azurehostedcontrolplanes
   verbs:
@@ -13,7 +13,7 @@ rules:
   - list
   - watch
 - apiGroups:
-  - infrastructure.x-k8s.io
+  - infrastructure.cluster.x-k8s.io
   resources:
   - azurehostedcontrolplanes/status
   verbs:

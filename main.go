@@ -194,6 +194,14 @@ func main() {
 			setupLog.Error(err, "unable to create controller", "controller", "AzureCluster")
 			os.Exit(1)
 		}
+		if err = (&controllers.AzureHostedControlPlaneReconciler{
+			Client:   mgr.GetClient(),
+			Log:      ctrl.Log.WithName("controllers").WithName("AzureHostedControlPlane"),
+			Recorder: mgr.GetEventRecorderFor("azurehostedcontrolplane-reconciler"),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "AzureHostedControlPlane")
+			os.Exit(1)
+		}
 	} else {
 		if err = (&infrastructurev1alpha3.AzureCluster{}).SetupWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "AzureCluster")
@@ -207,14 +215,6 @@ func main() {
 			setupLog.Error(err, "unable to create webhook", "webhook", "AzureMachineTemplate")
 			os.Exit(1)
 		}
-	}
-	if err = (&controllers.AzureHostedControlPlaneReconciler{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("AzureHostedControlPlane"),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "AzureHostedControlPlane")
-		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
 
