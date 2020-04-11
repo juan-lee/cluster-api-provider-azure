@@ -99,6 +99,9 @@ type AzureHostedControlPlaneStatus struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:resource:path=azurehostedcontrolplanes,scope=Namespaced,categories=cluster-api
+// +kubebuilder:storageversion
+// +kubebuilder:subresource:status
 
 // AzureHostedControlPlane is the Schema for the azurehostedcontrolplanes API
 type AzureHostedControlPlane struct {
