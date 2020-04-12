@@ -157,6 +157,11 @@ func (s *ClusterScope) ListOptionsLabelSelector() client.ListOption {
 	})
 }
 
+// Client returns the runtime client
+func (s *ClusterScope) Client() client.Client {
+	return s.client
+}
+
 // PatchObject persists the cluster configuration and status.
 func (s *ClusterScope) PatchObject() error {
 	return s.patchHelper.Patch(context.TODO(), s.AzureCluster)

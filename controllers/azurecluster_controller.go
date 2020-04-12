@@ -52,6 +52,9 @@ func (r *AzureClusterReconciler) SetupWithManager(mgr ctrl.Manager, options cont
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=azureclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=azureclusters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=clusters;clusters/status,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 
 func (r *AzureClusterReconciler) Reconcile(req ctrl.Request) (_ ctrl.Result, reterr error) {
 	ctx := context.TODO()
@@ -118,7 +121,7 @@ func (r *AzureClusterReconciler) reconcileNormal(clusterScope *scope.ClusterScop
 		return reconcile.Result{}, err
 	}
 
-	err := newAzureClusterReconciler(clusterScope).Reconcile()
+	err := newClusterReconciler(clusterScope).Reconcile()
 	if err != nil {
 		return reconcile.Result{}, errors.Wrap(err, "failed to reconcile cluster services")
 	}
@@ -147,7 +150,7 @@ func (r *AzureClusterReconciler) reconcileDelete(clusterScope *scope.ClusterScop
 
 	azureCluster := clusterScope.AzureCluster
 
-	if err := newAzureClusterReconciler(clusterScope).Delete(); err != nil {
+	if err := newClusterReconciler(clusterScope).Delete(); err != nil {
 		return reconcile.Result{}, errors.Wrapf(err, "error deleting AzureCluster %s/%s", azureCluster.Namespace, azureCluster.Name)
 	}
 

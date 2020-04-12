@@ -45,6 +45,7 @@ type AzureClusterSpec struct {
 	// +optional
 	AdditionalTags Tags `json:"additionalTags,omitempty"`
 
+	// +optional
 	IsHostedControlPlane bool `json:"isHostedControlPlane"`
 }
 

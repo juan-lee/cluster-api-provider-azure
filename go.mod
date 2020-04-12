@@ -8,6 +8,7 @@ require (
 	github.com/Azure/go-autorest/autorest/azure/auth v0.4.2
 	github.com/Azure/go-autorest/autorest/to v0.3.0
 	github.com/Azure/go-autorest/autorest/validation v0.2.0 // indirect
+	github.com/apex/log v1.1.2
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/go-logr/logr v0.1.0
 	github.com/golang/mock v1.4.0

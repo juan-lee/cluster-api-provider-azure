@@ -21,6 +21,10 @@ import (
 	"hash/fnv"
 
 	"github.com/pkg/errors"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog"
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1alpha3"
 	azure "sigs.k8s.io/cluster-api-provider-azure/cloud"
@@ -33,7 +37,14 @@ import (
 	"sigs.k8s.io/cluster-api-provider-azure/cloud/services/securitygroups"
 	"sigs.k8s.io/cluster-api-provider-azure/cloud/services/subnets"
 	"sigs.k8s.io/cluster-api-provider-azure/cloud/services/virtualnetworks"
+	"sigs.k8s.io/cluster-api-provider-azure/internal/kubeadm"
+	"sigs.k8s.io/cluster-api-provider-azure/internal/tunnel"
 )
+
+type ClusterReconciler interface {
+	Reconcile() error
+	Delete() error
+}
 
 // azureClusterReconciler are list of services required by cluster controller
 type azureClusterReconciler struct {
@@ -48,6 +59,23 @@ type azureClusterReconciler struct {
 	publicLBSvc      azure.Service
 }
 
+// hcpClusterReconciler are list of services required by cluster controller
+type hcpClusterReconciler struct {
+	scope            *scope.ClusterScope
+	groupsSvc        azure.Service
+	vnetSvc          azure.Service
+	securityGroupSvc azure.Service
+	routeTableSvc    azure.Service
+	subnetsSvc       azure.Service
+}
+
+func newClusterReconciler(scope *scope.ClusterScope) ClusterReconciler {
+	if scope.AzureCluster.Spec.IsHostedControlPlane {
+		return newHCPClusterReconciler(scope)
+	}
+	return newAzureClusterReconciler(scope)
+}
+
 // newAzureClusterReconciler populates all the services based on input scope
 func newAzureClusterReconciler(scope *scope.ClusterScope) *azureClusterReconciler {
 	return &azureClusterReconciler{
@@ -60,6 +88,18 @@ func newAzureClusterReconciler(scope *scope.ClusterScope) *azureClusterReconcile
 		internalLBSvc:    internalloadbalancers.NewService(scope),
 		publicIPSvc:      publicips.NewService(scope),
 		publicLBSvc:      publicloadbalancers.NewService(scope),
+	}
+}
+
+// hcpClusterReconciler populates all the services based on input scope
+func newHCPClusterReconciler(scope *scope.ClusterScope) *hcpClusterReconciler {
+	return &hcpClusterReconciler{
+		scope:            scope,
+		groupsSvc:        groups.NewService(scope),
+		vnetSvc:          virtualnetworks.NewService(scope),
+		securityGroupSvc: securitygroups.NewService(scope),
+		routeTableSvc:    routetables.NewService(scope),
+		subnetsSvc:       subnets.NewService(scope),
 	}
 }
 
@@ -337,4 +377,269 @@ func (r *azureClusterReconciler) createOrUpdateNetworkAPIServerIP() {
 	}
 
 	r.scope.Network().APIServerIP.DNSName = azure.GenerateFQDN(r.scope.Network().APIServerIP.Name, r.scope.Location())
+}
+
+// Reconcile reconciles all the services in pre determined order
+func (r *hcpClusterReconciler) Reconcile() error {
+	klog.V(2).Infof("reconciling cluster %s", r.scope.Name())
+
+	if err := r.groupsSvc.Reconcile(r.scope.Context, nil); err != nil {
+		return errors.Wrapf(err, "failed to reconcile resource group for cluster %s", r.scope.Name())
+	}
+
+	if r.scope.Vnet().ResourceGroup == "" {
+		r.scope.Vnet().ResourceGroup = r.scope.ResourceGroup()
+	}
+	if r.scope.Vnet().Name == "" {
+		r.scope.Vnet().Name = azure.GenerateVnetName(r.scope.Name())
+	}
+	if r.scope.Vnet().CidrBlock == "" {
+		r.scope.Vnet().CidrBlock = azure.DefaultVnetCIDR
+	}
+
+	if len(r.scope.Subnets()) == 0 {
+		r.scope.AzureCluster.Spec.NetworkSpec.Subnets = infrav1.Subnets{&infrav1.SubnetSpec{}}
+	}
+
+	vnetSpec := &virtualnetworks.Spec{
+		ResourceGroup: r.scope.Vnet().ResourceGroup,
+		Name:          r.scope.Vnet().Name,
+		CIDR:          r.scope.Vnet().CidrBlock,
+	}
+	if err := r.vnetSvc.Reconcile(r.scope.Context, vnetSpec); err != nil {
+		return errors.Wrapf(err, "failed to reconcile virtual network for cluster %s", r.scope.Name())
+	}
+
+	sgName := azure.GenerateNodeSecurityGroupName(r.scope.Name())
+	if r.scope.NodeSubnet() != nil && r.scope.NodeSubnet().SecurityGroup.Name != "" {
+		sgName = r.scope.NodeSubnet().SecurityGroup.Name
+	}
+	sgSpec := &securitygroups.Spec{
+		Name:           sgName,
+		IsControlPlane: false,
+	}
+	if err := r.securityGroupSvc.Reconcile(r.scope.Context, sgSpec); err != nil {
+		return errors.Wrapf(err, "failed to reconcile node network security group for cluster %s", r.scope.Name())
+	}
+
+	rtSpec := &routetables.Spec{
+		Name: azure.GenerateNodeRouteTableName(r.scope.Name()),
+	}
+	if err := r.routeTableSvc.Reconcile(r.scope.Context, rtSpec); err != nil {
+		return errors.Wrapf(err, "failed to reconcile node route table for cluster %s", r.scope.Name())
+	}
+
+	nodeSubnet := r.scope.NodeSubnet()
+	if nodeSubnet == nil {
+		nodeSubnet = &infrav1.SubnetSpec{}
+	}
+	if nodeSubnet.Role == "" {
+		nodeSubnet.Role = infrav1.SubnetNode
+	}
+	if nodeSubnet.Name == "" {
+		nodeSubnet.Name = azure.GenerateNodeSubnetName(r.scope.Name())
+	}
+	if nodeSubnet.CidrBlock == "" {
+		nodeSubnet.CidrBlock = azure.DefaultNodeSubnetCIDR
+	}
+	if nodeSubnet.SecurityGroup.Name == "" {
+		nodeSubnet.SecurityGroup.Name = azure.GenerateNodeSecurityGroupName(r.scope.Name())
+	}
+
+	subnetSpec := &subnets.Spec{
+		Name:              nodeSubnet.Name,
+		CIDR:              nodeSubnet.CidrBlock,
+		VnetName:          r.scope.Vnet().Name,
+		SecurityGroupName: nodeSubnet.SecurityGroup.Name,
+		RouteTableName:    azure.GenerateNodeRouteTableName(r.scope.Name()),
+		Role:              nodeSubnet.Role,
+	}
+	if err := r.subnetsSvc.Reconcile(r.scope.Context, subnetSpec); err != nil {
+		return errors.Wrapf(err, "failed to reconcile node subnet for cluster %s", r.scope.Name())
+	}
+
+	if err := r.reconcileTunnel(); err != nil {
+		return errors.Wrap(err, "failed to reconcile tunnel")
+	}
+	if err := r.reconcileControlPlaneService(); err != nil {
+		return errors.Wrap(err, "failed to hosted control plane load balancer service")
+	}
+	return nil
+}
+
+func (r *hcpClusterReconciler) reconcileTunnel() error {
+	if err := r.reconcileTunnelSecrets(); err != nil {
+		return err
+	}
+	if err := r.reconcileTunnelService(); err != nil {
+		return err
+	}
+	if err := r.reconcileTunnelServer(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *hcpClusterReconciler) reconcileTunnelSecrets() error {
+	secrets, err := tunnel.Secrets()
+	if err != nil {
+		return err
+	}
+
+	klog.Info("Reconciling tunnel secrets")
+	for _, secret := range secrets {
+		secret.Namespace = r.scope.Namespace()
+		existing := corev1.Secret{}
+		if err := r.scope.Client().Get(r.scope.Context, types.NamespacedName{Namespace: secret.Namespace, Name: secret.Name}, &existing); err != nil {
+			if apierrors.IsNotFound(err) {
+				klog.Infof("Secret not found, creating - %s", secret.Name)
+
+				// TODO(jpang): set owner ref
+				if err := r.scope.Client().Create(r.scope.Context, &secret); err != nil {
+					return err
+				}
+				continue
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *hcpClusterReconciler) reconcileTunnelService() error {
+	desired := tunnel.ServerServiceSpec()
+	desired.Namespace = r.scope.Namespace()
+	existing := corev1.Service{}
+	if err := r.scope.Client().Get(r.scope.Context, types.NamespacedName{Namespace: desired.Namespace, Name: desired.Name}, &existing); err != nil {
+		if apierrors.IsNotFound(err) {
+			klog.Info("Tunnel Server service not found, creating")
+
+			// TODO(jpang): set owner ref
+			if err := r.scope.Client().Create(r.scope.Context, desired); err != nil {
+				return err
+			}
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+func (r *hcpClusterReconciler) reconcileTunnelServer() error {
+	desired := tunnel.ServerPodSpec()
+	desired.Namespace = r.scope.Namespace()
+	existing := appsv1.Deployment{}
+	if err := r.scope.Client().Get(r.scope.Context, types.NamespacedName{Namespace: desired.Namespace, Name: desired.Name}, &existing); err != nil {
+		if apierrors.IsNotFound(err) {
+			klog.Info("Tunnel Server pod not found, creating")
+
+			// TODO(jpang): set owner ref
+			if err := r.scope.Client().Create(r.scope.Context, desired); err != nil {
+				return err
+			}
+			return nil
+		}
+		return err
+	}
+
+	klog.Infof("Tunnel Server pod found, updating - %s", desired.Name)
+	if err := r.scope.Client().Update(r.scope.Context, desired); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *hcpClusterReconciler) reconcileControlPlaneService() error {
+	desired := kubeadm.ControlPlaneServiceSpec()
+	desired.Namespace = r.scope.Namespace()
+	existing := corev1.Service{}
+	if err := r.scope.Client().Get(r.scope.Context, types.NamespacedName{Namespace: desired.Namespace, Name: desired.Name}, &existing); err != nil {
+		if apierrors.IsNotFound(err) {
+			klog.Info("Control Plane service not found, creating")
+
+			// TODO(jpang): set owner ref
+			if err := r.scope.Client().Create(r.scope.Context, desired); err != nil {
+				return err
+			}
+			return nil
+		}
+		return err
+	}
+
+	if len(existing.Status.LoadBalancer.Ingress) > 0 {
+		r.scope.Network().APIServerIP.DNSName = existing.Status.LoadBalancer.Ingress[0].IP
+	}
+	return nil
+}
+
+// Delete reconciles all the services in pre determined order
+func (r *hcpClusterReconciler) Delete() error {
+	if r.scope.Vnet().ResourceGroup == "" {
+		r.scope.Vnet().ResourceGroup = r.scope.ResourceGroup()
+	}
+	if r.scope.Vnet().Name == "" {
+		r.scope.Vnet().Name = azure.GenerateVnetName(r.scope.Name())
+	}
+
+	if err := r.deleteSubnets(); err != nil {
+		return errors.Wrap(err, "failed to delete subnets")
+	}
+
+	rtSpec := &routetables.Spec{
+		Name: azure.GenerateNodeRouteTableName(r.scope.Name()),
+	}
+	if err := r.routeTableSvc.Delete(r.scope.Context, rtSpec); err != nil {
+		if !azure.ResourceNotFound(err) {
+			return errors.Wrapf(err, "failed to delete route table %s for cluster %s", azure.GenerateNodeRouteTableName(r.scope.Name()), r.scope.Name())
+		}
+	}
+
+	if err := r.deleteNSG(); err != nil {
+		return errors.Wrap(err, "failed to delete network security group")
+	}
+
+	vnetSpec := &virtualnetworks.Spec{
+		ResourceGroup: r.scope.Vnet().ResourceGroup,
+		Name:          r.scope.Vnet().Name,
+	}
+	if err := r.vnetSvc.Delete(r.scope.Context, vnetSpec); err != nil {
+		if !azure.ResourceNotFound(err) {
+			return errors.Wrapf(err, "failed to delete virtual network %s for cluster %s", r.scope.Vnet().Name, r.scope.Name())
+		}
+	}
+
+	if err := r.groupsSvc.Delete(r.scope.Context, nil); err != nil {
+		if !azure.ResourceNotFound(err) {
+			return errors.Wrapf(err, "failed to delete resource group for cluster %s", r.scope.Name())
+		}
+	}
+
+	return nil
+}
+
+func (r *hcpClusterReconciler) deleteSubnets() error {
+	for _, s := range r.scope.Subnets() {
+		subnetSpec := &subnets.Spec{
+			Name:     s.Name,
+			VnetName: r.scope.Vnet().Name,
+		}
+		if err := r.subnetsSvc.Delete(r.scope.Context, subnetSpec); err != nil {
+			if !azure.ResourceNotFound(err) {
+				return errors.Wrapf(err, "failed to delete %s subnet for cluster %s", s.Name, r.scope.Name())
+			}
+		}
+	}
+	return nil
+}
+
+func (r *hcpClusterReconciler) deleteNSG() error {
+	sgSpec := &securitygroups.Spec{
+		Name: azure.GenerateNodeSecurityGroupName(r.scope.Name()),
+	}
+	if err := r.securityGroupSvc.Delete(r.scope.Context, sgSpec); err != nil {
+		if !azure.ResourceNotFound(err) {
+			return errors.Wrapf(err, "failed to delete security group %s for cluster %s", azure.GenerateNodeSecurityGroupName(r.scope.Name()), r.scope.Name())
+		}
+	}
+	return nil
 }

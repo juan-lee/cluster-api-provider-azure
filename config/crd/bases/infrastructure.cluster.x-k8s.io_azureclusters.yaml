@@ -560,7 +560,6 @@ spec:
               resourceGroup:
                 type: string
             required:
-            - isHostedControlPlane
             - location
             - resourceGroup
             type: object

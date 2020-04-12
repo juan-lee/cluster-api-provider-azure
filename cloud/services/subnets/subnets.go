@@ -80,7 +80,10 @@ func (s *Service) Reconcile(ctx context.Context, spec interface{}) error {
 		if subnetSpec.Role == infrav1.SubnetControlPlane {
 			subnet.DeepCopyInto(s.Scope.ControlPlaneSubnet())
 		} else if subnetSpec.Role == infrav1.SubnetNode {
-			subnet.DeepCopyInto(s.Scope.NodeSubnet())
+			// TODO(jpang): figure out why this is nil
+			if s.Scope.NodeSubnet() != nil {
+				subnet.DeepCopyInto(s.Scope.NodeSubnet())
+			}
 		}
 		return nil
 	}
