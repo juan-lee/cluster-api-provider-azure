@@ -198,7 +198,7 @@ func main() {
 			Client:   mgr.GetClient(),
 			Log:      ctrl.Log.WithName("controllers").WithName("AzureHostedControlPlane"),
 			Recorder: mgr.GetEventRecorderFor("azurehostedcontrolplane-reconciler"),
-		}).SetupWithManager(mgr); err != nil {
+		}).SetupWithManager(mgr, controller.Options{MaxConcurrentReconciles: azureClusterConcurrency}); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "AzureHostedControlPlane")
 			os.Exit(1)
 		}

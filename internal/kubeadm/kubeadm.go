@@ -28,17 +28,17 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	kubeadmapi "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm"
 	"k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/scheme"
-	"k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/v1beta2"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/certs"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/controlplane"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/etcd"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/kubeconfig"
 	etcdutil "k8s.io/kubernetes/cmd/kubeadm/app/util/etcd"
+	kubeadmv1beta1 "sigs.k8s.io/cluster-api/bootstrap/kubeadm/types/v1beta1"
 )
 
 type Configuration struct {
-	InitConfiguration    v1beta2.InitConfiguration
-	ClusterConfiguration v1beta2.ClusterConfiguration
+	InitConfiguration    kubeadmv1beta1.InitConfiguration
+	ClusterConfiguration kubeadmv1beta1.ClusterConfiguration
 }
 
 func Defaults() *Configuration {
@@ -48,14 +48,14 @@ func Defaults() *Configuration {
 	return &config
 }
 
-func DefaultCluster() *v1beta2.ClusterConfiguration {
-	cc := v1beta2.ClusterConfiguration{}
+func DefaultCluster() *kubeadmv1beta1.ClusterConfiguration {
+	cc := kubeadmv1beta1.ClusterConfiguration{}
 	scheme.Scheme.Default(&cc)
 	return &cc
 }
 
-func DefaultInit() *v1beta2.InitConfiguration {
-	ic := v1beta2.InitConfiguration{}
+func DefaultInit() *kubeadmv1beta1.InitConfiguration {
+	ic := kubeadmv1beta1.InitConfiguration{}
 	scheme.Scheme.Default(&ic)
 	return &ic
 }
