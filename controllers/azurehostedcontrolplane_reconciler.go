@@ -58,7 +58,7 @@ func initializeKubeadmConfig(hcpScope *scope.HostedControlPlaneScope) *kubeadm.C
 
 // Delete reconciles all the services in pre determined order
 func (s *azureHCPService) Delete() error {
-	deployment := s.kubeadmConfig.ControlPlanePodSpec()
+	deployment := s.kubeadmConfig.ControlPlaneDeploymentSpec()
 	deployment.Namespace = s.hcpScope.Namespace()
 	if err := s.hcpScope.Client().Delete(s.clusterScope.Context, deployment); err != nil {
 		return err
@@ -68,7 +68,7 @@ func (s *azureHCPService) Delete() error {
 
 func (s *azureHCPService) ReconcileControlPlane() error {
 	ctx := s.clusterScope.Context
-	desired := s.kubeadmConfig.ControlPlanePodSpec()
+	desired := s.kubeadmConfig.ControlPlaneDeploymentSpec()
 	desired.Namespace = s.hcpScope.Namespace()
 	desired.Spec.Template.Spec.Containers = append(desired.Spec.Template.Spec.Containers, tunnel.ClientPodSpec().Spec.Containers...)
 	existing := appsv1.Deployment{}

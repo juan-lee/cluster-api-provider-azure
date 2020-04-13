@@ -464,6 +464,9 @@ func (r *hcpClusterReconciler) Reconcile() error {
 	if err := r.reconcileControlPlaneService(); err != nil {
 		return errors.Wrap(err, "failed to hosted control plane load balancer service")
 	}
+	if err := r.reconcileControlPlaneSecrets(); err != nil {
+		return errors.Wrap(err, "failed to hosted control plane secrets")
+	}
 	return nil
 }
 
@@ -545,6 +548,44 @@ func (r *hcpClusterReconciler) reconcileTunnelServer() error {
 	klog.Infof("Tunnel Server pod found, updating - %s", desired.Name)
 	if err := r.scope.Client().Update(r.scope.Context, desired); err != nil {
 		return err
+	}
+	return nil
+}
+
+// HACK(jpang): doesn't belong in this controller
+func (r *hcpClusterReconciler) reconcileControlPlaneSecrets() error {
+	if r.scope.Network().APIServerIP.DNSName == "" {
+		klog.Info("ControlPlaneEndpoint not set, skipping secret generation...")
+	}
+
+	config := kubeadm.Configuration{}
+	config.InitConfiguration.LocalAPIEndpoint.AdvertiseAddress = "172.17.0.10"
+	config.InitConfiguration.NodeRegistration.Name = "controlplane"
+	config.ClusterConfiguration.ControlPlaneEndpoint = r.scope.Network().APIServerIP.DNSName
+	if r.scope.Cluster.Spec.ClusterNetwork.Services != nil {
+		config.ClusterConfiguration.Networking.ServiceSubnet = r.scope.Cluster.Spec.ClusterNetwork.Services.CIDRBlocks[0]
+	}
+	secrets, err := config.GenerateSecrets()
+	if err != nil {
+		return err
+	}
+
+	klog.Info("Reconciling tunnel secrets")
+	for _, secret := range secrets {
+		secret.Namespace = r.scope.Namespace()
+		existing := corev1.Secret{}
+		if err := r.scope.Client().Get(r.scope.Context, types.NamespacedName{Namespace: secret.Namespace, Name: secret.Name}, &existing); err != nil {
+			if apierrors.IsNotFound(err) {
+				klog.Infof("Secret not found, creating - %s", secret.Name)
+
+				// TODO(jpang): set owner ref
+				if err := r.scope.Client().Create(r.scope.Context, &secret); err != nil {
+					return err
+				}
+				continue
+			}
+			return err
+		}
 	}
 	return nil
 }
