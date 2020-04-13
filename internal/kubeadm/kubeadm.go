@@ -70,6 +70,8 @@ func (c *Configuration) GenerateSecrets() ([]corev1.Secret, error) {
 	kubeconfigDir := path.Join(tmpdir, "kubeconfig")
 
 	initConfig := kubeadmapi.InitConfiguration{}
+	scheme.Scheme.Default(&c.InitConfiguration)
+	scheme.Scheme.Default(&c.ClusterConfiguration)
 	scheme.Scheme.Convert(&c.InitConfiguration, &initConfig, nil)
 	scheme.Scheme.Convert(&c.ClusterConfiguration, &initConfig.ClusterConfiguration, nil)
 	initConfig.ClusterConfiguration.CertificatesDir = certsDir
@@ -148,8 +150,10 @@ func (c *Configuration) GenerateSecrets() ([]corev1.Secret, error) {
 	return secrets, nil
 }
 
-func (c *Configuration) ControlPlanePodSpec() *appsv1.Deployment {
+func (c *Configuration) ControlPlaneDeploymentSpec() *appsv1.Deployment {
 	initConfig := kubeadmapi.InitConfiguration{}
+	scheme.Scheme.Default(&c.InitConfiguration)
+	scheme.Scheme.Default(&c.ClusterConfiguration)
 	scheme.Scheme.Convert(&c.InitConfiguration, &initConfig, nil)
 	scheme.Scheme.Convert(&c.ClusterConfiguration, &initConfig.ClusterConfiguration, nil)
 	pods := controlplane.GetStaticPodSpecs(&initConfig.ClusterConfiguration, &initConfig.LocalAPIEndpoint)
