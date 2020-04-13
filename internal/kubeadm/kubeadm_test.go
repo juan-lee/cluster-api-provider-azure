@@ -26,7 +26,6 @@ func TestDefaults(t *testing.T) {
 	config := kubeadm.Configuration{}
 	config.InitConfiguration.LocalAPIEndpoint.AdvertiseAddress = "172.17.0.10"
 	config.InitConfiguration.NodeRegistration.Name = "controlplane"
-	config.ClusterConfiguration.Networking.ServiceSubnet = "172.18.0.0/12"
 	podSpec := config.ControlPlaneDeploymentSpec()
 	if podSpec == nil {
 		t.Error("Failed to generate the ControlPlaneDeploymentSpec")
