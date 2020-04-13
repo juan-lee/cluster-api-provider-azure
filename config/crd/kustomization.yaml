@@ -9,6 +9,7 @@ resources:
   - bases/infrastructure.cluster.x-k8s.io_azureclusters.yaml
   - bases/infrastructure.cluster.x-k8s.io_azuremachinetemplates.yaml
   - bases/infrastructure.cluster.x-k8s.io_azurehostedcontrolplanes.yaml
+  - bases/infrastructure.cluster.x-k8s.io_azurehostedcontrolplanetemplates.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:

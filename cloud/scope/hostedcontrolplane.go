@@ -21,6 +21,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/klogr"
+	"k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/scheme"
 	"k8s.io/utils/pointer"
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1alpha3"
 	"sigs.k8s.io/cluster-api-provider-azure/internal/kubeadm"
@@ -215,14 +216,13 @@ func (m *HostedControlPlaneScope) GetKubeAdmConfig() (*kubeadm.Configuration, er
 	if m.Machine.Spec.Bootstrap.DataSecretName == nil {
 		return nil, errors.New("error retrieving bootstrap data: linked Machine's bootstrap.dataSecretName is nil")
 	}
-	var config *bootstrapv1.KubeadmConfig
-	key := types.NamespacedName{Namespace: m.Namespace(), Name: m.Machine.Spec.Bootstrap.ConfigRef.Name}
+	config := &bootstrapv1.KubeadmConfig{}
+	key := types.NamespacedName{Namespace: m.Machine.Spec.Bootstrap.ConfigRef.Namespace, Name: m.Machine.Spec.Bootstrap.ConfigRef.Name}
 	if err := m.client.Get(context.TODO(), key, config); err != nil {
 		return nil, errors.Wrapf(err, "failed to retrieve kubeadm bootstrap config for AzureHostedControlPlane %s/%s", m.Namespace(), m.Name())
 	}
-
 	kubeadmConfig := kubeadm.Defaults()
-	kubeadmConfig.InitConfiguration = *config.Spec.InitConfiguration
-	kubeadmConfig.ClusterConfiguration = *config.Spec.ClusterConfiguration
+	scheme.Scheme.Convert(config.Spec.InitConfiguration, &kubeadmConfig.InitConfiguration, nil)
+	scheme.Scheme.Convert(config.Spec.ClusterConfiguration, &kubeadmConfig.ClusterConfiguration, nil)
 	return kubeadmConfig, nil
 }

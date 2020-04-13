@@ -8,6 +8,7 @@ require (
 	github.com/Azure/go-autorest/autorest/azure/auth v0.4.2
 	github.com/Azure/go-autorest/autorest/to v0.3.0
 	github.com/Azure/go-autorest/autorest/validation v0.2.0 // indirect
+	github.com/a8m/envsubst v1.1.0 // indirect
 	github.com/apex/log v1.1.2
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/go-logr/logr v0.1.0
@@ -31,6 +32,7 @@ require (
 	k8s.io/kubernetes v1.17.4
 	k8s.io/utils v0.0.0-20200324210504-a9aa75ae1b89
 	sigs.k8s.io/cluster-api v0.3.3
+	sigs.k8s.io/cluster-api/hack/tools v0.0.0-20200410224147-f952f38bb3d2 // indirect
 	sigs.k8s.io/controller-runtime v0.5.2
 )
 
