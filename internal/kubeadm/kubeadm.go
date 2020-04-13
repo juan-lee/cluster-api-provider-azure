@@ -26,7 +26,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/klog"
 	kubeadmapi "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm"
 	"k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/scheme"
 	kubeadmv1beta2 "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/v1beta2"
@@ -154,15 +153,12 @@ func (c *Configuration) GenerateSecrets() ([]corev1.Secret, error) {
 func (c *Configuration) ControlPlaneDeploymentSpec() *appsv1.Deployment {
 	initConfig := kubeadmapi.InitConfiguration{}
 	clusterConfig := kubeadmapi.ClusterConfiguration{}
+	scheme.Scheme.Default(&c.InitConfiguration)
+	scheme.Scheme.Default(&c.ClusterConfiguration)
 	scheme.Scheme.Convert(&c.InitConfiguration, &initConfig, nil)
 	scheme.Scheme.Convert(&c.ClusterConfiguration, &clusterConfig, nil)
-	scheme.Scheme.Default(&initConfig)
-	scheme.Scheme.Default(&clusterConfig)
 
 	pods := controlplane.GetStaticPodSpecs(&clusterConfig, &initConfig.LocalAPIEndpoint)
-
-	klog.Info(initConfig)
-	klog.Info(clusterConfig)
 
 	combined := corev1.Pod{
 		Spec: corev1.PodSpec{
