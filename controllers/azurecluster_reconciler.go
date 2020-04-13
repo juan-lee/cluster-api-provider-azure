@@ -24,6 +24,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog"
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1alpha3"
@@ -586,6 +587,89 @@ func (r *hcpClusterReconciler) reconcileControlPlaneSecrets() error {
 			}
 			return err
 		}
+	}
+	for _, secret := range secrets {
+		if err := r.reconcileKubernetesCerts(&secret); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *hcpClusterReconciler) reconcileKubernetesCerts(cert *corev1.Secret) error {
+	if cert.Name == "k8s-certs" {
+		if err := r.reconcileCertificate("ca", "ca", cert); err != nil {
+			return err
+		}
+		if err := r.reconcileCertificate("sa", "sa", cert); err != nil {
+			return err
+		}
+		if err := r.reconcileCertificate("front-proxy-ca", "proxy", cert); err != nil {
+			return err
+		}
+	}
+	if cert.Name == "k8s-certs" {
+		if err := r.reconcileCertificate("ca", "etcd", cert); err != nil {
+			return err
+		}
+	}
+	if cert.Name == "kubeconfig" {
+		if err := r.reconcileKubeconfig(cert); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *hcpClusterReconciler) reconcileCertificate(source, dest string, cert *corev1.Secret) error {
+	desired := corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("%s-%s", r.scope.Cluster.Name, dest),
+			Namespace: r.scope.Namespace(),
+		},
+		Data: map[string][]byte{
+			"tls.key": cert.Data[fmt.Sprintf("%s.key", source)],
+			"tls.crt": cert.Data[fmt.Sprintf("%s.crt", source)],
+		},
+	}
+	existing := corev1.Secret{}
+	if err := r.scope.Client().Get(r.scope.Context, types.NamespacedName{Namespace: desired.Namespace, Name: desired.Name}, &existing); err != nil {
+		if apierrors.IsNotFound(err) {
+			klog.Infof("Secret not found, creating - %s", desired.Name)
+
+			// TODO(jpang): set owner ref
+			if err := r.scope.Client().Create(r.scope.Context, &desired); err != nil {
+				return err
+			}
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+func (r *hcpClusterReconciler) reconcileKubeconfig(cert *corev1.Secret) error {
+	desired := corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("%s-kubeconfig", r.scope.Cluster.Name),
+			Namespace: r.scope.Namespace(),
+		},
+		Data: map[string][]byte{
+			"value": cert.Data["admin.conf"],
+		},
+	}
+	existing := corev1.Secret{}
+	if err := r.scope.Client().Get(r.scope.Context, types.NamespacedName{Namespace: desired.Namespace, Name: desired.Name}, &existing); err != nil {
+		if apierrors.IsNotFound(err) {
+			klog.Infof("Secret not found, creating - %s", desired.Name)
+
+			// TODO(jpang): set owner ref
+			if err := r.scope.Client().Create(r.scope.Context, &desired); err != nil {
+				return err
+			}
+			return nil
+		}
+		return err
 	}
 	return nil
 }
