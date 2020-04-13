@@ -16,6 +16,7 @@ limitations under the License.
 package kubeadm
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -28,17 +29,18 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	kubeadmapi "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm"
 	"k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/scheme"
-	"k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/v1beta2"
+	kubeadmv1beta1 "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/v1beta1"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/certs"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/controlplane"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/etcd"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/kubeconfig"
 	etcdutil "k8s.io/kubernetes/cmd/kubeadm/app/util/etcd"
+	capikubeadmv1beta1 "sigs.k8s.io/cluster-api/bootstrap/kubeadm/types/v1beta1"
 )
 
 type Configuration struct {
-	InitConfiguration    v1beta2.InitConfiguration
-	ClusterConfiguration v1beta2.ClusterConfiguration
+	InitConfiguration    kubeadmv1beta1.InitConfiguration
+	ClusterConfiguration kubeadmv1beta1.ClusterConfiguration
 }
 
 func Defaults() *Configuration {
@@ -48,16 +50,41 @@ func Defaults() *Configuration {
 	return &config
 }
 
-func DefaultCluster() *v1beta2.ClusterConfiguration {
-	cc := v1beta2.ClusterConfiguration{}
+func DefaultCluster() *kubeadmv1beta1.ClusterConfiguration {
+	cc := kubeadmv1beta1.ClusterConfiguration{}
 	scheme.Scheme.Default(&cc)
 	return &cc
 }
 
-func DefaultInit() *v1beta2.InitConfiguration {
-	ic := v1beta2.InitConfiguration{}
+func DefaultInit() *kubeadmv1beta1.InitConfiguration {
+	ic := kubeadmv1beta1.InitConfiguration{}
 	scheme.Scheme.Default(&ic)
 	return &ic
+}
+
+func New(init *capikubeadmv1beta1.InitConfiguration, clusterConfig *capikubeadmv1beta1.ClusterConfiguration) (*Configuration, error) {
+	config := Configuration{}
+	if init != nil {
+		initJSON, err := json.Marshal(*init)
+		if err != nil {
+			return nil, err
+		}
+		err = json.Unmarshal(initJSON, &config.InitConfiguration)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if clusterConfig != nil {
+		clusterConfigJSON, err := json.Marshal(*clusterConfig)
+		if err != nil {
+			return nil, err
+		}
+		err = json.Unmarshal(clusterConfigJSON, &config.ClusterConfiguration)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &config, nil
 }
 
 func (c *Configuration) GenerateSecrets() ([]corev1.Secret, error) {

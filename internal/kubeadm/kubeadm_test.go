@@ -20,12 +20,39 @@ import (
 	"testing"
 
 	"sigs.k8s.io/cluster-api-provider-azure/internal/kubeadm"
+	capikubeadmv1beta1 "sigs.k8s.io/cluster-api/bootstrap/kubeadm/types/v1beta1"
 )
 
 func TestDefaults(t *testing.T) {
 	config := kubeadm.Configuration{}
 	config.InitConfiguration.LocalAPIEndpoint.AdvertiseAddress = "172.17.0.10"
 	config.InitConfiguration.NodeRegistration.Name = "controlplane"
+	podSpec := config.ControlPlaneDeploymentSpec()
+	if podSpec == nil {
+		t.Error("Failed to generate the ControlPlaneDeploymentSpec")
+	}
+
+	secrets, err := config.GenerateSecrets()
+	if err != nil {
+		t.Error(err)
+	}
+
+	if len(secrets) != 3 {
+		t.Error("Wrong number of secrets")
+	}
+}
+
+func TestConvert(t *testing.T) {
+	initConfig := capikubeadmv1beta1.InitConfiguration{}
+	clusterConfig := capikubeadmv1beta1.ClusterConfiguration{}
+	initConfig.LocalAPIEndpoint.AdvertiseAddress = "172.17.0.10"
+	initConfig.NodeRegistration.Name = "controlplane"
+
+	config, err := kubeadm.New(&initConfig, &clusterConfig)
+	if err != nil {
+		t.Error(err)
+	}
+
 	podSpec := config.ControlPlaneDeploymentSpec()
 	if podSpec == nil {
 		t.Error("Failed to generate the ControlPlaneDeploymentSpec")
