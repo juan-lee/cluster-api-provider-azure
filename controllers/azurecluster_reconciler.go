@@ -399,7 +399,7 @@ func (r *hcpClusterReconciler) Reconcile() error {
 	}
 
 	if len(r.scope.Subnets()) == 0 {
-		r.scope.AzureCluster.Spec.NetworkSpec.Subnets = infrav1.Subnets{&infrav1.SubnetSpec{}}
+		r.scope.AzureCluster.Spec.NetworkSpec.Subnets = infrav1.Subnets{&infrav1.SubnetSpec{}, &infrav1.SubnetSpec{}}
 	}
 
 	vnetSpec := &virtualnetworks.Spec{
@@ -410,12 +410,23 @@ func (r *hcpClusterReconciler) Reconcile() error {
 	if err := r.vnetSvc.Reconcile(r.scope.Context, vnetSpec); err != nil {
 		return errors.Wrapf(err, "failed to reconcile virtual network for cluster %s", r.scope.Name())
 	}
+	sgName := azure.GenerateControlPlaneSecurityGroupName(r.scope.Name())
+	if r.scope.ControlPlaneSubnet() != nil && r.scope.ControlPlaneSubnet().SecurityGroup.Name != "" {
+		sgName = r.scope.ControlPlaneSubnet().SecurityGroup.Name
+	}
+	sgSpec := &securitygroups.Spec{
+		Name:           sgName,
+		IsControlPlane: true,
+	}
+	if err := r.securityGroupSvc.Reconcile(r.scope.Context, sgSpec); err != nil {
+		return errors.Wrapf(err, "failed to reconcile control plane network security group for cluster %s", r.scope.Name())
+	}
 
-	sgName := azure.GenerateNodeSecurityGroupName(r.scope.Name())
+	sgName = azure.GenerateNodeSecurityGroupName(r.scope.Name())
 	if r.scope.NodeSubnet() != nil && r.scope.NodeSubnet().SecurityGroup.Name != "" {
 		sgName = r.scope.NodeSubnet().SecurityGroup.Name
 	}
-	sgSpec := &securitygroups.Spec{
+	sgSpec = &securitygroups.Spec{
 		Name:           sgName,
 		IsControlPlane: false,
 	}
@@ -428,6 +439,36 @@ func (r *hcpClusterReconciler) Reconcile() error {
 	}
 	if err := r.routeTableSvc.Reconcile(r.scope.Context, rtSpec); err != nil {
 		return errors.Wrapf(err, "failed to reconcile node route table for cluster %s", r.scope.Name())
+	}
+
+	cpSubnet := r.scope.ControlPlaneSubnet()
+	if cpSubnet == nil {
+		cpSubnet = &infrav1.SubnetSpec{}
+	}
+	if cpSubnet.Role == "" {
+		cpSubnet.Role = infrav1.SubnetControlPlane
+	}
+	if cpSubnet.Name == "" {
+		cpSubnet.Name = azure.GenerateControlPlaneSubnetName(r.scope.Name())
+	}
+	if cpSubnet.CidrBlock == "" {
+		cpSubnet.CidrBlock = azure.DefaultControlPlaneSubnetCIDR
+	}
+	if cpSubnet.SecurityGroup.Name == "" {
+		cpSubnet.SecurityGroup.Name = azure.GenerateControlPlaneSecurityGroupName(r.scope.Name())
+	}
+
+	subnetSpec := &subnets.Spec{
+		Name:                cpSubnet.Name,
+		CIDR:                cpSubnet.CidrBlock,
+		VnetName:            r.scope.Vnet().Name,
+		SecurityGroupName:   cpSubnet.SecurityGroup.Name,
+		RouteTableName:      azure.GenerateNodeRouteTableName(r.scope.Name()),
+		Role:                cpSubnet.Role,
+		InternalLBIPAddress: cpSubnet.InternalLBIPAddress,
+	}
+	if err := r.subnetsSvc.Reconcile(r.scope.Context, subnetSpec); err != nil {
+		return errors.Wrapf(err, "failed to reconcile control plane subnet for cluster %s", r.scope.Name())
 	}
 
 	nodeSubnet := r.scope.NodeSubnet()
@@ -447,7 +488,7 @@ func (r *hcpClusterReconciler) Reconcile() error {
 		nodeSubnet.SecurityGroup.Name = azure.GenerateNodeSecurityGroupName(r.scope.Name())
 	}
 
-	subnetSpec := &subnets.Spec{
+	subnetSpec = &subnets.Spec{
 		Name:              nodeSubnet.Name,
 		CIDR:              nodeSubnet.CidrBlock,
 		VnetName:          r.scope.Vnet().Name,
@@ -546,17 +587,18 @@ func (r *hcpClusterReconciler) reconcileTunnelServer() error {
 		return err
 	}
 
-	klog.Infof("Tunnel Server pod found, updating - %s", desired.Name)
-	if err := r.scope.Client().Update(r.scope.Context, desired); err != nil {
-		return err
-	}
+	// klog.Infof("Tunnel Server pod found, updating - %s", desired.Name)
+	// if err := r.scope.Client().Update(r.scope.Context, desired); err != nil {
+	// 	return err
+	// }
 	return nil
 }
 
 // HACK(jpang): doesn't belong in this controller
 func (r *hcpClusterReconciler) reconcileControlPlaneSecrets() error {
 	if r.scope.Network().APIServerIP.DNSName == "" {
-		klog.Info("ControlPlaneEndpoint not set, skipping secret generation...")
+		klog.Info("ControlPlaneEndpoint not set, skipping secret generation... :)")
+		return nil
 	}
 
 	config := kubeadm.Configuration{}
