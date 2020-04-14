@@ -42,6 +42,7 @@ import (
 	infrastructurev1alpha3 "sigs.k8s.io/cluster-api-provider-azure/api/v1alpha3"
 	infrav1alpha3 "sigs.k8s.io/cluster-api-provider-azure/api/v1alpha3"
 	"sigs.k8s.io/cluster-api-provider-azure/controllers"
+	bootstrapv1 "sigs.k8s.io/cluster-api/bootstrap/kubeadm/api/v1alpha3"
 )
 
 var (
@@ -57,6 +58,7 @@ func init() {
 	_ = infrav1alpha3.AddToScheme(scheme)
 	_ = clusterv1.AddToScheme(scheme)
 	_ = infrastructurev1alpha3.AddToScheme(scheme)
+	_ = bootstrapv1.AddToScheme(scheme)
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -198,7 +200,7 @@ func main() {
 			Client:   mgr.GetClient(),
 			Log:      ctrl.Log.WithName("controllers").WithName("AzureHostedControlPlane"),
 			Recorder: mgr.GetEventRecorderFor("azurehostedcontrolplane-reconciler"),
-		}).SetupWithManager(mgr); err != nil {
+		}).SetupWithManager(mgr, controller.Options{MaxConcurrentReconciles: azureClusterConcurrency}); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "AzureHostedControlPlane")
 			os.Exit(1)
 		}

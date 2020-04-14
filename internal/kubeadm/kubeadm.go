@@ -179,11 +179,13 @@ func (c *Configuration) GenerateSecrets() ([]corev1.Secret, error) {
 
 func (c *Configuration) ControlPlaneDeploymentSpec() *appsv1.Deployment {
 	initConfig := kubeadmapi.InitConfiguration{}
+	clusterConfig := kubeadmapi.ClusterConfiguration{}
 	scheme.Scheme.Default(&c.InitConfiguration)
 	scheme.Scheme.Default(&c.ClusterConfiguration)
 	scheme.Scheme.Convert(&c.InitConfiguration, &initConfig, nil)
-	scheme.Scheme.Convert(&c.ClusterConfiguration, &initConfig.ClusterConfiguration, nil)
-	pods := controlplane.GetStaticPodSpecs(&initConfig.ClusterConfiguration, &initConfig.LocalAPIEndpoint)
+	scheme.Scheme.Convert(&c.ClusterConfiguration, &clusterConfig, nil)
+
+	pods := controlplane.GetStaticPodSpecs(&clusterConfig, &initConfig.LocalAPIEndpoint)
 
 	combined := corev1.Pod{
 		Spec: corev1.PodSpec{
@@ -266,7 +268,7 @@ func (c *Configuration) ControlPlaneDeploymentSpec() *appsv1.Deployment {
 		combined.Spec.Containers = append(combined.Spec.Containers, pod.Spec.Containers...)
 	}
 
-	etcdPod := etcd.GetEtcdPodSpec(&initConfig.ClusterConfiguration, &initConfig.LocalAPIEndpoint, "controlplane", []etcdutil.Member{})
+	etcdPod := etcd.GetEtcdPodSpec(&clusterConfig, &initConfig.LocalAPIEndpoint, "controlplane", []etcdutil.Member{})
 	for n := range etcdPod.Spec.Containers {
 		if etcdPod.Spec.Containers[n].LivenessProbe != nil && etcdPod.Spec.Containers[n].LivenessProbe.HTTPGet != nil {
 			// Substitute 127.0.0.1 with empty string so liveness will use etcdPod ip instead.
