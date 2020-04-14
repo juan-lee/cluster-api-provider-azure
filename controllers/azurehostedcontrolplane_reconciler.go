@@ -14,6 +14,8 @@ limitations under the License.
 package controllers
 
 import (
+	"fmt"
+
 	"github.com/pkg/errors"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -78,24 +80,24 @@ func (s *azureHCPService) ReconcileControlPlane() error {
 
 			// TODO(jpang): set owner ref
 			if err := s.hcpScope.Client().Create(ctx, desired); err != nil {
-				return err
+				return fmt.Errorf("Create control plane pod failed: %w", err)
 			}
 			return nil
 		}
-		return err
+		return fmt.Errorf("Get control plane pod failed: %w", err)
 	}
 
 	klog.Info("Control Plane pod found, updating", "name", desired.Name)
 	if err := s.hcpScope.Client().Update(ctx, desired); err != nil {
-		return err
+		return fmt.Errorf("Update control plane pod failed: %w", err)
 	}
 
-	var pods *corev1.PodList
+	pods := corev1.PodList{}
 	listOptions := client.MatchingLabels(map[string]string{
 		"app": "controlplane",
 	})
-	if err := s.hcpScope.Client().List(ctx, pods, listOptions); err != nil {
-		return err
+	if err := s.hcpScope.Client().List(ctx, &pods, listOptions); err != nil {
+		return fmt.Errorf("List control plane pod failed: %w", err)
 	}
 	// hack: assuming it's a singleton for now
 	pod := pods.Items[0]
