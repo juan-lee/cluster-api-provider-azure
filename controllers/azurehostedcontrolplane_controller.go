@@ -15,6 +15,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
@@ -156,7 +157,7 @@ func (r *AzureHostedControlPlaneReconciler) Reconcile(req ctrl.Request) (_ ctrl.
 
 func (r *AzureHostedControlPlaneReconciler) reconcileNormal(ctx context.Context, hcpScope *scope.HostedControlPlaneScope, clusterScope *scope.ClusterScope) (reconcile.Result, error) {
 	hcpScope.Info("Reconciling AzureHostedControlPlane")
-	// If the AzureMachine is in an error state, return early.
+	// If the AzureHostedControlPlane is in an error state, return early.
 	if hcpScope.AzureHostedControlPlane.Status.FailureReason != nil || hcpScope.AzureHostedControlPlane.Status.FailureMessage != nil {
 		hcpScope.Info("Error state detected, skipping reconciliation")
 		return reconcile.Result{}, nil
@@ -187,11 +188,12 @@ func (r *AzureHostedControlPlaneReconciler) reconcileNormal(ctx context.Context,
 	hcpService := newAzureHCPService(hcpScope, clusterScope)
 
 	if err := hcpService.ReconcileControlPlane(); err != nil {
+		hcpScope.Info("Error in reconcile control plane %w", err)
 		return reconcile.Result{}, err
 	}
 
-	// Make sure Spec.ProviderID is always set.
-	// hcpScope.SetProviderID(fmt.Sprintf("azure:////%s", vm.ID))
+	// TODO: Alter upstream code so we don't need this
+	hcpScope.SetProviderID(fmt.Sprintf("azure:////%s", hcpScope.Name()))
 
 	// Proceed to reconcile the AzureMachine state.
 	// hcpScope.SetVMState(vm.State)
