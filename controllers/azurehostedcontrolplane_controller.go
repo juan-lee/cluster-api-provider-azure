@@ -48,7 +48,7 @@ func (r *AzureHostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, o
 		Watches(
 			&source.Kind{Type: &clusterv1.Machine{}},
 			&handler.EnqueueRequestsFromMapFunc{
-				ToRequests: util.MachineToInfrastructureMapFunc(infrav1.GroupVersion.WithKind("AzureMachine")),
+				ToRequests: util.MachineToInfrastructureMapFunc(infrav1.GroupVersion.WithKind("AzureHostedControlPlane")),
 			},
 		).
 		Watches(

@@ -87,10 +87,10 @@ func (s *azureHCPService) ReconcileControlPlane() error {
 		return fmt.Errorf("Get control plane pod failed: %w", err)
 	}
 
-	klog.Info("Control Plane pod found, updating", "name", desired.Name)
-	if err := s.hcpScope.Client().Update(ctx, desired); err != nil {
-		return fmt.Errorf("Update control plane pod failed: %w", err)
-	}
+	// klog.Info("Control Plane pod found, updating", "name", desired.Name)
+	// if err := s.hcpScope.Client().Update(ctx, desired); err != nil {
+	// 	return fmt.Errorf("Update control plane pod failed: %w", err)
+	// }
 
 	pods := corev1.PodList{}
 	listOptions := client.MatchingLabels(map[string]string{
