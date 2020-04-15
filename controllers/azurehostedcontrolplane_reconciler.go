@@ -109,6 +109,10 @@ func (s *azureHCPService) ReconcileControlPlane() error {
 		return fmt.Errorf("List control plane pod failed: %w", err)
 	}
 	// hack: assuming it's a singleton for now
+	if len(pods.Items) == 0 {
+		s.hcpScope.Info("HCP pod is being created")
+		return nil
+	}
 	pod := pods.Items[0]
 	switch pod.Status.Phase {
 	case corev1.PodRunning:
