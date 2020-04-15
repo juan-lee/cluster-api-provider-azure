@@ -20,6 +20,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog"
 	"sigs.k8s.io/cluster-api-provider-azure/cloud/scope"
@@ -50,6 +51,7 @@ func initializeKubeadmConfig(hcpScope *scope.HostedControlPlaneScope) *kubeadm.C
 	config, err := hcpScope.GetKubeAdmConfig()
 	if err != nil {
 		hcpScope.Error(err, "Failed to get kubeadm config")
+		return nil
 	}
 	config.InitConfiguration.LocalAPIEndpoint.AdvertiseAddress = "172.17.0.10"
 	config.InitConfiguration.NodeRegistration.Name = "controlplane"
@@ -60,7 +62,14 @@ func initializeKubeadmConfig(hcpScope *scope.HostedControlPlaneScope) *kubeadm.C
 
 // Delete reconciles all the services in pre determined order
 func (s *azureHCPService) Delete() error {
-	deployment := s.kubeadmConfig.ControlPlaneDeploymentSpec()
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "controlplane",
+			Labels: map[string]string{
+				"app": "controlplane",
+			},
+		},
+	}
 	deployment.Namespace = s.hcpScope.Namespace()
 	if err := s.hcpScope.Client().Delete(s.clusterScope.Context, deployment); err != nil {
 		return err
