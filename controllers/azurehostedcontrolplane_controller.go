@@ -195,13 +195,8 @@ func (r *AzureHostedControlPlaneReconciler) reconcileNormal(ctx context.Context,
 	// TODO: Alter upstream code so we don't need this
 	hcpScope.SetProviderID(fmt.Sprintf("azure:////%s", hcpScope.Name()))
 
-	// Proceed to reconcile the AzureMachine state.
-	// hcpScope.SetVMState(vm.State)
-
 	// TODO(vincepri): Remove this annotation when clusterctl is no longer relevant.
 	hcpScope.SetAnnotation("cluster-api-provider-azure", "true")
-
-	// hcpScope.SetAddresses(vm.Addresses)
 
 	// TODO: Ensure that the tags are correct.
 	// err = r.reconcileTags(hcpScope, clusterScope, hcpScope.AdditionalTags())

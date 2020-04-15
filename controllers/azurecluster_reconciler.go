@@ -608,12 +608,24 @@ func (r *hcpClusterReconciler) reconcileControlPlaneSecrets() error {
 	if r.scope.Cluster.Spec.ClusterNetwork.Services != nil {
 		config.ClusterConfiguration.Networking.ServiceSubnet = r.scope.Cluster.Spec.ClusterNetwork.Services.CIDRBlocks[0]
 	}
+
+	// hack: not checking <hcp-name>-ca, etc.
+	certsExist, err := r.checkIfCertsExist()
+	if err != nil {
+		return err
+	}
+	if certsExist {
+		klog.Info("Returning early as control plane cert secrets already exist")
+		return nil
+	}
+
+	// Generate certs and create secrets
+	klog.Info("Reconciling tunnel secrets")
 	secrets, err := config.GenerateSecrets()
 	if err != nil {
 		return err
 	}
 
-	klog.Info("Reconciling tunnel secrets")
 	for _, secret := range secrets {
 		secret.Namespace = r.scope.Namespace()
 		existing := corev1.Secret{}
@@ -714,6 +726,41 @@ func (r *hcpClusterReconciler) reconcileKubeconfig(cert *corev1.Secret) error {
 		return err
 	}
 	return nil
+}
+
+func (r *hcpClusterReconciler) checkIfCertsExist() (bool, error) {
+	// check if certs have already been generated
+	secrets := []corev1.Secret{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "k8s-certs",
+			},
+			Data: map[string][]byte{},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "etcd-certs",
+			},
+			Data: map[string][]byte{},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "kubeconfig",
+			},
+			Data: map[string][]byte{},
+		},
+	}
+	for _, secret := range secrets {
+		secret.Namespace = r.scope.Namespace()
+		existing := corev1.Secret{}
+		if err := r.scope.Client().Get(r.scope.Context, types.NamespacedName{Namespace: secret.Namespace, Name: secret.Name}, &existing); err != nil {
+			if apierrors.IsNotFound(err) {
+				return false, nil
+			}
+			return false, err
+		}
+	}
+	return true, nil
 }
 
 func (r *hcpClusterReconciler) reconcileControlPlaneService() error {
