@@ -33,13 +33,20 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	bootstrapapi "k8s.io/cluster-bootstrap/token/api"
+	"k8s.io/klog"
+	kubeproxyconfigv1alpha1 "k8s.io/kube-proxy/config/v1alpha1"
+	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 	kubeadmapi "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm"
 	"k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/scheme"
 	kubeadmv1beta1 "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/v1beta1"
+	addondns "k8s.io/kubernetes/cmd/kubeadm/app/phases/addons/dns"
+	addonproxy "k8s.io/kubernetes/cmd/kubeadm/app/phases/addons/proxy"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/certs"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/controlplane"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/etcd"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/kubeconfig"
+	"k8s.io/kubernetes/cmd/kubeadm/app/phases/kubelet"
+	"k8s.io/kubernetes/cmd/kubeadm/app/phases/uploadconfig"
 	"k8s.io/kubernetes/cmd/kubeadm/app/util/apiclient"
 	etcdutil "k8s.io/kubernetes/cmd/kubeadm/app/util/etcd"
 	capikubeadmv1beta1 "sigs.k8s.io/cluster-api/bootstrap/kubeadm/types/v1beta1"
@@ -186,13 +193,12 @@ func (c *Configuration) GenerateSecrets() ([]corev1.Secret, error) {
 
 func (c *Configuration) ControlPlaneDeploymentSpec() *appsv1.Deployment {
 	initConfig := kubeadmapi.InitConfiguration{}
-	clusterConfig := kubeadmapi.ClusterConfiguration{}
 	scheme.Scheme.Default(&c.InitConfiguration)
 	scheme.Scheme.Default(&c.ClusterConfiguration)
 	scheme.Scheme.Convert(&c.InitConfiguration, &initConfig, nil)
-	scheme.Scheme.Convert(&c.ClusterConfiguration, &clusterConfig, nil)
+	scheme.Scheme.Convert(&c.ClusterConfiguration, &initConfig.ClusterConfiguration, nil)
 
-	pods := controlplane.GetStaticPodSpecs(&clusterConfig, &initConfig.LocalAPIEndpoint)
+	pods := controlplane.GetStaticPodSpecs(&initConfig.ClusterConfiguration, &initConfig.LocalAPIEndpoint)
 
 	combined := corev1.Pod{
 		Spec: corev1.PodSpec{
@@ -275,7 +281,7 @@ func (c *Configuration) ControlPlaneDeploymentSpec() *appsv1.Deployment {
 		combined.Spec.Containers = append(combined.Spec.Containers, pod.Spec.Containers...)
 	}
 
-	etcdPod := etcd.GetEtcdPodSpec(&clusterConfig, &initConfig.LocalAPIEndpoint, "controlplane", []etcdutil.Member{})
+	etcdPod := etcd.GetEtcdPodSpec(&initConfig.ClusterConfiguration, &initConfig.LocalAPIEndpoint, "controlplane", []etcdutil.Member{})
 	for n := range etcdPod.Spec.Containers {
 		if etcdPod.Spec.Containers[n].LivenessProbe != nil && etcdPod.Spec.Containers[n].LivenessProbe.HTTPGet != nil {
 			// Substitute 127.0.0.1 with empty string so liveness will use etcdPod ip instead.
@@ -313,6 +319,40 @@ func (c *Configuration) ControlPlaneDeploymentSpec() *appsv1.Deployment {
 			},
 		},
 	}
+}
+
+func (c *Configuration) UploadConfig(client clientset.Interface) error {
+	initConfig := kubeadmapi.InitConfiguration{}
+	kubeletConfig := kubeletconfigv1beta1.KubeletConfiguration{}
+	scheme.Scheme.Default(&c.InitConfiguration)
+	scheme.Scheme.Default(&c.ClusterConfiguration)
+	scheme.Scheme.Default(&kubeletConfig)
+	scheme.Scheme.Convert(&c.InitConfiguration, &initConfig, nil)
+	scheme.Scheme.Convert(&c.ClusterConfiguration, &initConfig.ClusterConfiguration, nil)
+	initConfig.ClusterConfiguration.ComponentConfigs.Kubelet = &kubeletConfig
+	klog.Infof("initConfig: %+v", initConfig)
+	if err := uploadconfig.UploadConfiguration(&initConfig, client); err != nil {
+		return fmt.Errorf("failed to UploadConfiguration: %w", err)
+	}
+	if err := kubelet.CreateConfigMap(initConfig.ClusterConfiguration.ComponentConfigs.Kubelet, initConfig.ClusterConfiguration.KubernetesVersion, client); err != nil {
+		return fmt.Errorf("failed to CreateConfigMap: %w", err)
+	}
+	return nil
+}
+
+func (c *Configuration) EnsureAddons(client clientset.Interface) error {
+	initConfig := kubeadmapi.InitConfiguration{}
+	proxyConfig := kubeproxyconfigv1alpha1.KubeProxyConfiguration{}
+	scheme.Scheme.Default(&c.InitConfiguration)
+	scheme.Scheme.Default(&c.ClusterConfiguration)
+	scheme.Scheme.Default(&proxyConfig)
+	scheme.Scheme.Convert(&c.InitConfiguration, &initConfig, nil)
+	scheme.Scheme.Convert(&c.ClusterConfiguration, &initConfig.ClusterConfiguration, nil)
+	initConfig.ClusterConfiguration.ComponentConfigs.KubeProxy = &proxyConfig
+	if err := addonproxy.EnsureProxyAddon(&initConfig.ClusterConfiguration, &initConfig.LocalAPIEndpoint, client); err != nil {
+		return err
+	}
+	return addondns.EnsureDNSAddon(&initConfig.ClusterConfiguration, client)
 }
 
 func ControlPlaneServiceSpec() *corev1.Service {

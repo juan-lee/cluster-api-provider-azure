@@ -18,16 +18,17 @@ import (
 
 	"github.com/pkg/errors"
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog"
 	"sigs.k8s.io/cluster-api-provider-azure/cloud/scope"
 	"sigs.k8s.io/cluster-api-provider-azure/internal/kubeadm"
 	"sigs.k8s.io/cluster-api-provider-azure/internal/tunnel"
-	capierrors "sigs.k8s.io/cluster-api/errors"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/cluster-api/util"
+	kcfg "sigs.k8s.io/cluster-api/util/kubeconfig"
 )
 
 // azureHCPService are list of services required by cluster actuator, easy to create a fake
@@ -55,8 +56,12 @@ func initializeKubeadmConfig(hcpScope *scope.HostedControlPlaneScope) *kubeadm.C
 	}
 	config.InitConfiguration.LocalAPIEndpoint.AdvertiseAddress = "172.17.0.10"
 	config.InitConfiguration.NodeRegistration.Name = "controlplane"
-	config.ClusterConfiguration.KubernetesVersion = "v1.18.0"
-	config.ClusterConfiguration.Networking.ServiceSubnet = "172.18.0.0/12"
+	if hcpScope.Cluster.Spec.ClusterNetwork != nil && hcpScope.Cluster.Spec.ClusterNetwork.Pods != nil && len(hcpScope.Cluster.Spec.ClusterNetwork.Pods.CIDRBlocks) > 0 {
+		config.ClusterConfiguration.Networking.PodSubnet = hcpScope.Cluster.Spec.ClusterNetwork.Pods.CIDRBlocks[0]
+	}
+	if hcpScope.Cluster.Spec.ClusterNetwork != nil && hcpScope.Cluster.Spec.ClusterNetwork.Services != nil && len(hcpScope.Cluster.Spec.ClusterNetwork.Services.CIDRBlocks) > 0 {
+		config.ClusterConfiguration.Networking.ServiceSubnet = hcpScope.Cluster.Spec.ClusterNetwork.Services.CIDRBlocks[0]
+	}
 	return config
 }
 
@@ -77,7 +82,22 @@ func (s *azureHCPService) Delete() error {
 	return nil
 }
 
-func (s *azureHCPService) ReconcileControlPlane() error {
+func (s *azureHCPService) Reconcile() error {
+	if s.hcpScope.AzureHostedControlPlane.Status.Ready {
+		s.hcpScope.Logger.Info("ControlPlane is ready, skipping reconcile")
+		return nil
+	}
+	if err := s.reconcileControlPlaneDeployment(); err != nil {
+		return err
+	}
+	if err := s.reconcilePostControlPlaneInit(); err != nil {
+		return err
+	}
+	s.hcpScope.SetReady()
+	return nil
+}
+
+func (s *azureHCPService) reconcileControlPlaneDeployment() error {
 	ctx := s.clusterScope.Context
 	desired := s.kubeadmConfig.ControlPlaneDeploymentSpec()
 	desired.Namespace = s.hcpScope.Namespace()
@@ -85,7 +105,7 @@ func (s *azureHCPService) ReconcileControlPlane() error {
 	existing := appsv1.Deployment{}
 	if err := s.hcpScope.Client().Get(ctx, types.NamespacedName{Namespace: desired.Namespace, Name: desired.Name}, &existing); err != nil {
 		if apierrors.IsNotFound(err) {
-			klog.Info("Control Plane pod not found, creating", "name", desired.Name)
+			klog.Infof("Control Plane pod not found, creating: %s", desired.Name)
 
 			// TODO(jpang): set owner ref
 			if err := s.hcpScope.Client().Create(ctx, desired); err != nil {
@@ -101,30 +121,35 @@ func (s *azureHCPService) ReconcileControlPlane() error {
 	// 	return fmt.Errorf("Update control plane pod failed: %w", err)
 	// }
 
-	pods := corev1.PodList{}
-	listOptions := client.MatchingLabels(map[string]string{
-		"app": "controlplane",
-	})
-	if err := s.hcpScope.Client().List(ctx, &pods, listOptions); err != nil {
-		return fmt.Errorf("List control plane pod failed: %w", err)
+	if existing.Status.ReadyReplicas != 1 {
+		return errors.New("Control Plane Pod isn't ready")
 	}
-	// hack: assuming it's a singleton for now
-	if len(pods.Items) == 0 {
-		s.hcpScope.Info("HCP pod is being created")
-		return nil
-	}
-	pod := pods.Items[0]
-	switch pod.Status.Phase {
-	case corev1.PodRunning:
-		s.hcpScope.Info("HCP pod is running", "instance-id", pod.GetName())
-		s.hcpScope.SetReady()
-	case corev1.PodPending:
-		s.hcpScope.Info("HCP pod is pending", "instance-id", pod.GetName())
-	case corev1.PodFailed:
-	case corev1.PodUnknown:
-		s.hcpScope.SetFailureReason(capierrors.UpdateMachineError)
-		s.hcpScope.SetFailureMessage(errors.New("Pod has gotten into a failued or unknown state"))
-	}
+	return nil
+}
 
+func (s *azureHCPService) reconcilePostControlPlaneInit() error {
+	ctx := s.clusterScope.Context
+
+	kubeConfig, err := kcfg.FromSecret(ctx, s.hcpScope.Client(), util.ObjectKey(s.hcpScope.Cluster))
+	if err != nil {
+		return err
+	}
+	restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeConfig)
+	if err != nil {
+		return err
+	}
+	kubeClient, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		return err
+	}
+	if err := kubeadm.CreateBootstrapConfigMapIfNotExists(kubeClient, kubeConfig); err != nil {
+		return fmt.Errorf("CreateBootstrapConfigMapIfNotExists: %w", err)
+	}
+	if err := s.kubeadmConfig.UploadConfig(kubeClient); err != nil {
+		return fmt.Errorf("UploadConfig: %w", err)
+	}
+	if err := s.kubeadmConfig.EnsureAddons(kubeClient); err != nil {
+		return fmt.Errorf("EnsureAddons: %w", err)
+	}
 	return nil
 }

@@ -187,8 +187,8 @@ func (r *AzureHostedControlPlaneReconciler) reconcileNormal(ctx context.Context,
 	//   and also to have the bootstrap secret in the format we want (we don't need the cloud-init format).
 	hcpService := newAzureHCPService(hcpScope, clusterScope)
 
-	if err := hcpService.ReconcileControlPlane(); err != nil {
-		hcpScope.Info("Error in reconcile control plane %w", err)
+	if err := hcpService.Reconcile(); err != nil {
+		hcpScope.Error(err, "Error in reconcile control plane")
 		return reconcile.Result{}, err
 	}
 
@@ -258,6 +258,5 @@ func (r *AzureHostedControlPlaneReconciler) AzureClusterToAzureMachines(o handle
 		name := client.ObjectKey{Namespace: m.Namespace, Name: m.Spec.InfrastructureRef.Name}
 		result = append(result, ctrl.Request{NamespacedName: name})
 	}
-
 	return result
 }
