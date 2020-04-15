@@ -23,10 +23,16 @@ import (
 	"path"
 	"strings"
 
+	"github.com/pkg/errors"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+	bootstrapapi "k8s.io/cluster-bootstrap/token/api"
 	kubeadmapi "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm"
 	"k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/scheme"
 	kubeadmv1beta1 "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/v1beta1"
@@ -34,6 +40,7 @@ import (
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/controlplane"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/etcd"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/kubeconfig"
+	"k8s.io/kubernetes/cmd/kubeadm/app/util/apiclient"
 	etcdutil "k8s.io/kubernetes/cmd/kubeadm/app/util/etcd"
 	capikubeadmv1beta1 "sigs.k8s.io/cluster-api/bootstrap/kubeadm/types/v1beta1"
 )
@@ -331,6 +338,35 @@ func ControlPlaneServiceSpec() *corev1.Service {
 			},
 		},
 	}
+}
+
+// CreateBootstrapConfigMapIfNotExists creates the kube-public ConfigMap if it doesn't exist already
+func CreateBootstrapConfigMapIfNotExists(client clientset.Interface, kubeconfig []byte) error {
+	adminConfig, err := clientcmd.Load(kubeconfig)
+	if err != nil {
+		return errors.Wrap(err, "failed to load admin kubeconfig")
+	}
+
+	adminCluster := adminConfig.Contexts[adminConfig.CurrentContext].Cluster
+	bootstrapConfig := &clientcmdapi.Config{
+		Clusters: map[string]*clientcmdapi.Cluster{
+			"": adminConfig.Clusters[adminCluster],
+		},
+	}
+	bootstrapBytes, err := clientcmd.Write(*bootstrapConfig)
+	if err != nil {
+		return err
+	}
+
+	return apiclient.CreateOrUpdateConfigMap(client, &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      bootstrapapi.ConfigMapClusterInfo,
+			Namespace: metav1.NamespacePublic,
+		},
+		Data: map[string]string{
+			bootstrapapi.KubeConfigKey: string(bootstrapBytes),
+		},
+	})
 }
 
 func hostPathTypePtr(h corev1.HostPathType) *corev1.HostPathType {

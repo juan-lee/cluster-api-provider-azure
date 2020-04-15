@@ -94,12 +94,12 @@ type HostedControlPlaneScope struct {
 	AzureHostedControlPlane *infrav1.AzureHostedControlPlane
 }
 
-// Location returns the AzureMachine location.
+// Location returns the AzureHostedControlPlane location.
 func (m *HostedControlPlaneScope) Location() string {
 	return m.AzureCluster.Spec.Location
 }
 
-// Name returns the AzureMachine name.
+// Name returns the AzureHostedControlPlane name.
 func (m *HostedControlPlaneScope) Name() string {
 	return m.AzureHostedControlPlane.Name
 }
@@ -122,7 +122,7 @@ func (m *HostedControlPlaneScope) Role() string {
 	return infrav1.Node
 }
 
-// GetVMID returns the AzureMachine instance id by parsing Spec.ProviderID.
+// GetVMID returns the AzureHostedControlPlane instance id by parsing Spec.ProviderID.
 func (m *HostedControlPlaneScope) GetVMID() *string {
 	parsed, err := noderefutil.NewProviderID(m.GetProviderID())
 	if err != nil {
@@ -131,7 +131,7 @@ func (m *HostedControlPlaneScope) GetVMID() *string {
 	return pointer.StringPtr(parsed.ID())
 }
 
-// GetProviderID returns the AzureMachine providerID from the spec.
+// GetProviderID returns the AzureHostedControlPlane providerID from the spec.
 func (m *HostedControlPlaneScope) GetProviderID() string {
 	if m.AzureHostedControlPlane.Spec.ProviderID != nil {
 		return *m.AzureHostedControlPlane.Spec.ProviderID
@@ -139,37 +139,27 @@ func (m *HostedControlPlaneScope) GetProviderID() string {
 	return ""
 }
 
-// SetProviderID sets the AzureMachine providerID in spec.
+// SetProviderID sets the AzureHostedControlPlane providerID in spec.
 func (m *HostedControlPlaneScope) SetProviderID(v string) {
 	m.AzureHostedControlPlane.Spec.ProviderID = pointer.StringPtr(v)
 }
 
-// GetVMState returns the AzureMachine VM state.
-func (m *HostedControlPlaneScope) GetVMState() *infrav1.VMState {
-	return m.AzureHostedControlPlane.Status.VMState
-}
-
-// SetVMState sets the AzureMachine VM state.
-func (m *HostedControlPlaneScope) SetVMState(v infrav1.VMState) {
-	m.AzureHostedControlPlane.Status.VMState = &v
-}
-
-// SetReady sets the AzureMachine Ready Status
+// SetReady sets the AzureHostedControlPlane Ready Status
 func (m *HostedControlPlaneScope) SetReady() {
 	m.AzureHostedControlPlane.Status.Ready = true
 }
 
-// SetFailureMessage sets the AzureMachine status failure message.
+// SetFailureMessage sets the AzureHostedControlPlane status failure message.
 func (m *HostedControlPlaneScope) SetFailureMessage(v error) {
 	m.AzureHostedControlPlane.Status.FailureMessage = pointer.StringPtr(v.Error())
 }
 
-// SetFailureReason sets the AzureMachine status failure reason.
+// SetFailureReason sets the AzureHostedControlPlane status failure reason.
 func (m *HostedControlPlaneScope) SetFailureReason(v capierrors.MachineStatusError) {
 	m.AzureHostedControlPlane.Status.FailureReason = &v
 }
 
-// SetAnnotation sets a key value annotation on the AzureMachine.
+// SetAnnotation sets a key value annotation on the AzureHostedControlPlane.
 func (m *HostedControlPlaneScope) SetAnnotation(key, value string) {
 	if m.AzureHostedControlPlane.Annotations == nil {
 		m.AzureHostedControlPlane.Annotations = map[string]string{}
@@ -204,8 +194,6 @@ func (m *HostedControlPlaneScope) AdditionalTags() infrav1.Tags {
 
 	// Start with the cluster-wide tags...
 	tags.Merge(m.AzureCluster.Spec.AdditionalTags)
-	// ... and merge in the Machine's
-	tags.Merge(m.AzureHostedControlPlane.Spec.AdditionalTags)
 
 	return tags
 }

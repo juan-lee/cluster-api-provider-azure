@@ -164,7 +164,7 @@ func (r *AzureHostedControlPlaneReconciler) reconcileNormal(ctx context.Context,
 	}
 
 	// If the AzureHostedControlPlane doesn't have our finalizer, add it.
-	controllerutil.AddFinalizer(hcpScope.AzureHostedControlPlane, infrav1.MachineFinalizer)
+	controllerutil.AddFinalizer(hcpScope.AzureHostedControlPlane, infrav1.AzureHostedControlPlaneFinalizer)
 	// Register the finalizer immediately to avoid orphaning Azure resources on delete
 	if err := hcpScope.PatchObject(); err != nil {
 		return reconcile.Result{}, err
@@ -217,7 +217,7 @@ func (r *AzureHostedControlPlaneReconciler) reconcileDelete(hcpScope *scope.Host
 	defer func() {
 		if reterr == nil {
 			// HCP Pod is deleted so remove the finalizer.
-			controllerutil.RemoveFinalizer(hcpScope.AzureHostedControlPlane, infrav1.MachineFinalizer)
+			controllerutil.RemoveFinalizer(hcpScope.AzureHostedControlPlane, infrav1.AzureHostedControlPlaneFinalizer)
 		}
 	}()
 

@@ -22,28 +22,17 @@ import (
 	"sigs.k8s.io/cluster-api/errors"
 )
 
+const (
+	// AzureHostedControlPlaneFinalizer allows ReconcileAzureMachine to clean up Azure resources associated with
+	// AzureHostedControlPlane before removing it from the apiserver.
+	AzureHostedControlPlaneFinalizer = "azurehostedcontrolplane.infrastructure.cluster.x-k8s.io"
+)
+
 // AzureHostedControlPlaneSpec defines the desired state of AzureHostedControlPlane
 type AzureHostedControlPlaneSpec struct {
 	// ProviderID is the unique identifier as specified by the cloud provider.
 	// +optional
 	ProviderID *string `json:"providerID,omitempty"`
-
-	// Image is used to provide details of an image to use during VM creation.
-	// If image details are omitted the image will default the Azure Marketplace "capi" offer,
-	// which is based on Ubuntu.
-	// +kubebuilder:validation:nullable
-	// +optional
-	Image *Image `json:"image,omitempty"`
-
-	Location string `json:"location"`
-
-	SSHPublicKey string `json:"sshPublicKey"`
-
-	// AdditionalTags is an optional set of tags to add to an instance, in addition to the ones added by default by the
-	// Azure provider. If both the AzureCluster and the AzureMachine specify the same tag name with different values, the
-	// AzureMachine's value takes precedence.
-	// +optional
-	AdditionalTags Tags `json:"additionalTags,omitempty"`
 }
 
 // AzureHostedControlPlaneStatus defines the observed state of AzureHostedControlPlane
@@ -55,11 +44,7 @@ type AzureHostedControlPlaneStatus struct {
 	// Addresses contains the Azure instance associated addresses.
 	Addresses []v1.NodeAddress `json:"addresses,omitempty"`
 
-	// VMState is the provisioning state of the Azure virtual machine.
-	// +optional
-	VMState *VMState `json:"vmState,omitempty"`
-
-	// ErrorReason will be set in the event that there is a terminal problem
+	// FailureReason will be set in the event that there is a terminal problem
 	// reconciling the Machine and will contain a succinct value suitable
 	// for machine interpretation.
 	//
@@ -78,7 +63,7 @@ type AzureHostedControlPlaneStatus struct {
 	// +optional
 	FailureReason *errors.MachineStatusError `json:"failureReason,omitempty"`
 
-	// ErrorMessage will be set in the event that there is a terminal problem
+	// FailureMessage will be set in the event that there is a terminal problem
 	// reconciling the Machine and will contain a more verbose string suitable
 	// for logging and human consumption.
 	//
@@ -102,6 +87,8 @@ type AzureHostedControlPlaneStatus struct {
 // +kubebuilder:resource:path=azurehostedcontrolplanes,scope=Namespaced,categories=cluster-api
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="ProviderID",type="string",JSONPath=".spec.providerID",description="Provider ID"
+// +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.ready",description="AzureHostedControlPlane readiness"
 
 // AzureHostedControlPlane is the Schema for the azurehostedcontrolplanes API
 type AzureHostedControlPlane struct {
