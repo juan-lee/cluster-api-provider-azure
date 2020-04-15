@@ -41,6 +41,7 @@ import (
 	kubeadmv1beta1 "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/v1beta1"
 	addondns "k8s.io/kubernetes/cmd/kubeadm/app/phases/addons/dns"
 	addonproxy "k8s.io/kubernetes/cmd/kubeadm/app/phases/addons/proxy"
+	"k8s.io/kubernetes/cmd/kubeadm/app/phases/bootstraptoken/clusterinfo"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/certs"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/controlplane"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/etcd"
@@ -398,7 +399,7 @@ func CreateBootstrapConfigMapIfNotExists(client clientset.Interface, kubeconfig 
 		return err
 	}
 
-	return apiclient.CreateOrUpdateConfigMap(client, &v1.ConfigMap{
+	if err := apiclient.CreateOrUpdateConfigMap(client, &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      bootstrapapi.ConfigMapClusterInfo,
 			Namespace: metav1.NamespacePublic,
@@ -406,7 +407,10 @@ func CreateBootstrapConfigMapIfNotExists(client clientset.Interface, kubeconfig 
 		Data: map[string]string{
 			bootstrapapi.KubeConfigKey: string(bootstrapBytes),
 		},
-	})
+	}); err != nil {
+		return err
+	}
+	return clusterinfo.CreateClusterInfoRBACRules(client)
 }
 
 func hostPathTypePtr(h corev1.HostPathType) *corev1.HostPathType {
