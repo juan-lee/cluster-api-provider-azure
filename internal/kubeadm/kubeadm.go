@@ -39,6 +39,7 @@ import (
 	kubeadmapi "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm"
 	"k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/scheme"
 	kubeadmv1beta1 "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/v1beta1"
+	"k8s.io/kubernetes/cmd/kubeadm/app/componentconfigs"
 	addondns "k8s.io/kubernetes/cmd/kubeadm/app/phases/addons/dns"
 	addonproxy "k8s.io/kubernetes/cmd/kubeadm/app/phases/addons/proxy"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/bootstraptoken/clusterinfo"
@@ -350,7 +351,7 @@ func (c *Configuration) EnsureAddons(client clientset.Interface) error {
 	scheme.Scheme.Default(&proxyConfig)
 	scheme.Scheme.Convert(&c.InitConfiguration, &initConfig, nil)
 	scheme.Scheme.Convert(&c.ClusterConfiguration, &initConfig.ClusterConfiguration, nil)
-	initConfig.ClusterConfiguration.ComponentConfigs.KubeProxy = &proxyConfig
+	componentconfigs.DefaultKubeProxyConfiguration(&initConfig.ClusterConfiguration)
 	if err := addonproxy.EnsureProxyAddon(&initConfig.ClusterConfiguration, &initConfig.LocalAPIEndpoint, client); err != nil {
 		return err
 	}
