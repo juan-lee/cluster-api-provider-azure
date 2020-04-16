@@ -34,11 +34,11 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	bootstrapapi "k8s.io/cluster-bootstrap/token/api"
 	"k8s.io/klog"
-	kubeproxyconfigv1alpha1 "k8s.io/kube-proxy/config/v1alpha1"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 	kubeadmapi "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm"
 	"k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/scheme"
 	kubeadmv1beta1 "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/v1beta1"
+	"k8s.io/kubernetes/cmd/kubeadm/app/componentconfigs"
 	addondns "k8s.io/kubernetes/cmd/kubeadm/app/phases/addons/dns"
 	addonproxy "k8s.io/kubernetes/cmd/kubeadm/app/phases/addons/proxy"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/bootstraptoken/clusterinfo"
@@ -344,13 +344,11 @@ func (c *Configuration) UploadConfig(client clientset.Interface) error {
 
 func (c *Configuration) EnsureAddons(client clientset.Interface) error {
 	initConfig := kubeadmapi.InitConfiguration{}
-	proxyConfig := kubeproxyconfigv1alpha1.KubeProxyConfiguration{}
 	scheme.Scheme.Default(&c.InitConfiguration)
 	scheme.Scheme.Default(&c.ClusterConfiguration)
-	scheme.Scheme.Default(&proxyConfig)
 	scheme.Scheme.Convert(&c.InitConfiguration, &initConfig, nil)
 	scheme.Scheme.Convert(&c.ClusterConfiguration, &initConfig.ClusterConfiguration, nil)
-	initConfig.ClusterConfiguration.ComponentConfigs.KubeProxy = &proxyConfig
+	componentconfigs.DefaultKubeProxyConfiguration(&initConfig.ClusterConfiguration)
 	if err := addonproxy.EnsureProxyAddon(&initConfig.ClusterConfiguration, &initConfig.LocalAPIEndpoint, client); err != nil {
 		return err
 	}
