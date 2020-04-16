@@ -42,6 +42,7 @@ import (
 	addondns "k8s.io/kubernetes/cmd/kubeadm/app/phases/addons/dns"
 	addonproxy "k8s.io/kubernetes/cmd/kubeadm/app/phases/addons/proxy"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/bootstraptoken/clusterinfo"
+	bootstraptokennode "k8s.io/kubernetes/cmd/kubeadm/app/phases/bootstraptoken/node"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/certs"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/controlplane"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/etcd"
@@ -381,8 +382,32 @@ func ControlPlaneServiceSpec() *corev1.Service {
 	}
 }
 
-// CreateBootstrapConfigMapIfNotExists creates the kube-public ConfigMap if it doesn't exist already
-func CreateBootstrapConfigMapIfNotExists(client clientset.Interface, kubeconfig []byte) error {
+func ProvisionBootstrapToken(client clientset.Interface, kubeconfig []byte) error {
+	// Create RBAC rules that makes the bootstrap tokens able to post CSRs
+	if err := bootstraptokennode.AllowBootstrapTokensToPostCSRs(client); err != nil {
+		return errors.Wrap(err, "error allowing bootstrap tokens to post CSRs")
+	}
+	// Create RBAC rules that makes the bootstrap tokens able to get their CSRs approved automatically
+	if err := bootstraptokennode.AutoApproveNodeBootstrapTokens(client); err != nil {
+		return errors.Wrap(err, "error auto-approving node bootstrap tokens")
+	}
+
+	// Create/update RBAC rules that makes the nodes to rotate certificates and get their CSRs approved automatically
+	if err := bootstraptokennode.AutoApproveNodeCertificateRotation(client); err != nil {
+		return err
+	}
+
+	// Create the cluster-info ConfigMap with the associated RBAC rules
+	if err := createBootstrapConfigMapIfNotExists(client, kubeconfig); err != nil {
+		return errors.Wrap(err, "error creating bootstrap ConfigMap")
+	}
+	if err := clusterinfo.CreateClusterInfoRBACRules(client); err != nil {
+		return errors.Wrap(err, "error creating clusterinfo RBAC rules")
+	}
+	return nil
+}
+
+func createBootstrapConfigMapIfNotExists(client clientset.Interface, kubeconfig []byte) error {
 	adminConfig, err := clientcmd.Load(kubeconfig)
 	if err != nil {
 		return errors.Wrap(err, "failed to load admin kubeconfig")
@@ -399,7 +424,7 @@ func CreateBootstrapConfigMapIfNotExists(client clientset.Interface, kubeconfig 
 		return err
 	}
 
-	if err := apiclient.CreateOrUpdateConfigMap(client, &v1.ConfigMap{
+	return apiclient.CreateOrUpdateConfigMap(client, &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      bootstrapapi.ConfigMapClusterInfo,
 			Namespace: metav1.NamespacePublic,
@@ -407,10 +432,7 @@ func CreateBootstrapConfigMapIfNotExists(client clientset.Interface, kubeconfig 
 		Data: map[string]string{
 			bootstrapapi.KubeConfigKey: string(bootstrapBytes),
 		},
-	}); err != nil {
-		return err
-	}
-	return clusterinfo.CreateClusterInfoRBACRules(client)
+	})
 }
 
 func hostPathTypePtr(h corev1.HostPathType) *corev1.HostPathType {

@@ -142,7 +142,7 @@ func (s *azureHCPService) reconcilePostControlPlaneInit() error {
 	if err != nil {
 		return err
 	}
-	if err := kubeadm.CreateBootstrapConfigMapIfNotExists(kubeClient, kubeConfig); err != nil {
+	if err := kubeadm.ProvisionBootstrapToken(kubeClient, kubeConfig); err != nil {
 		return fmt.Errorf("CreateBootstrapConfigMapIfNotExists: %w", err)
 	}
 	if err := s.kubeadmConfig.UploadConfig(kubeClient); err != nil {
