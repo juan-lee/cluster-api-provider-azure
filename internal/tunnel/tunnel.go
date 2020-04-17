@@ -16,6 +16,7 @@ limitations under the License.
 package tunnel
 
 import (
+	"errors"
 	"fmt"
 
 	"golang.zx2c4.com/wireguard/wgcfg"
@@ -35,7 +36,7 @@ PrivateKey = %s
 [Peer]
 PublicKey = %s
 Endpoint = tunnel-server:51820
-AllowedIPs = 172.17.0.0/24, 172.16.0.0/16
+AllowedIPs = 172.17.0.0/24,172.16.0.0/16,192.168.0.0/16,10.1.0.0/16
 PersistentKeepalive = 30`
 
 	serverConf = `[Interface]
@@ -48,15 +49,37 @@ PrivateKey = %s
 
 [Peer]
 PublicKey = %s
-AllowedIPs = 172.17.0.10/32`
+AllowedIPs = 172.17.0.10/32
+
+[Peer]
+PublicKey = %s
+AllowedIPs = 172.17.0.12/32,172.16.0.0/16,192.168.0.0/16,10.1.0.0/16`
+
+	clusterConf = `[Interface]
+Address = 172.17.0.12/32
+SaveConfig = false
+PrivateKey = %s
+
+[Peer]
+PublicKey = %s
+Endpoint = %s:51820
+AllowedIPs = 172.17.0.0/24
+PersistentKeepalive = 30`
 )
 
-func Secrets() ([]corev1.Secret, error) {
+func Secrets(serviceIP string) ([]corev1.Secret, error) {
+	if serviceIP == "" {
+		return nil, errors.New("Missing serviceIP")
+	}
 	client, err := wgcfg.NewPrivateKey()
 	if err != nil {
 		return nil, err
 	}
 	server, err := wgcfg.NewPrivateKey()
+	if err != nil {
+		return nil, err
+	}
+	cluster, err := wgcfg.NewPrivateKey()
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +101,17 @@ func Secrets() ([]corev1.Secret, error) {
 			Data: map[string][]byte{
 				"privatekey": []byte(server.String()),
 				"publickey":  []byte(server.Public().Base64()),
-				"wg0.conf":   []byte(fmt.Sprintf(serverConf, server.String(), client.Public().Base64())),
+				"wg0.conf":   []byte(fmt.Sprintf(serverConf, server.String(), client.Public().Base64(), cluster.Public().Base64())),
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "tunnel-cluster",
+			},
+			Data: map[string][]byte{
+				"privatekey": []byte(cluster.String()),
+				"publickey":  []byte(cluster.Public().Base64()),
+				"wg0.conf":   []byte(fmt.Sprintf(clusterConf, cluster.String(), server.Public().Base64(), serviceIP)),
 			},
 		},
 	}
@@ -186,6 +219,68 @@ func ServerPodSpec() *appsv1.Deployment {
 	}
 }
 
+func ClusterPodSpec() *appsv1.Deployment {
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "tunnel-client",
+			Namespace: "kube-system",
+			Labels: map[string]string{
+				"app": "tunnel-client",
+			},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app": "tunnel-client",
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "tunnel-client",
+					Labels: map[string]string{
+						"app": "tunnel-client",
+					},
+				},
+				Spec: corev1.PodSpec{
+					HostNetwork: true,
+					Containers: []corev1.Container{
+						{
+							Image:           "juanlee/wireguard:latest",
+							ImagePullPolicy: corev1.PullAlways,
+							Name:            "tunnel-client",
+							SecurityContext: &corev1.SecurityContext{
+								Capabilities: &corev1.Capabilities{
+									Add: []corev1.Capability{
+										"NET_ADMIN",
+										"SYS_MODULE",
+									},
+								},
+								Privileged: pointer.BoolPtr(true),
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "tunnel-client",
+									MountPath: "/etc/wireguard",
+								},
+							},
+						},
+					},
+					Volumes: []corev1.Volume{
+						{
+							Name: "tunnel-client",
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{
+									SecretName: "tunnel-client",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
 func ServerServiceSpec() *corev1.Service {
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -195,7 +290,7 @@ func ServerServiceSpec() *corev1.Service {
 			},
 		},
 		Spec: corev1.ServiceSpec{
-			Type: corev1.ServiceTypeClusterIP,
+			Type: corev1.ServiceTypeLoadBalancer,
 			Selector: map[string]string{
 				"app": "tunnel-server",
 			},

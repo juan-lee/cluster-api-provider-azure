@@ -513,10 +513,10 @@ func (r *hcpClusterReconciler) Reconcile() error {
 }
 
 func (r *hcpClusterReconciler) reconcileTunnel() error {
-	if err := r.reconcileTunnelSecrets(); err != nil {
+	if err := r.reconcileTunnelService(); err != nil {
 		return err
 	}
-	if err := r.reconcileTunnelService(); err != nil {
+	if err := r.reconcileTunnelSecrets(); err != nil {
 		return err
 	}
 	if err := r.reconcileTunnelServer(); err != nil {
@@ -526,7 +526,7 @@ func (r *hcpClusterReconciler) reconcileTunnel() error {
 }
 
 func (r *hcpClusterReconciler) reconcileTunnelSecrets() error {
-	secrets, err := tunnel.Secrets()
+	secrets, err := tunnel.Secrets(r.scope.AzureCluster.Status.TunnelIP)
 	if err != nil {
 		return err
 	}
@@ -566,6 +566,9 @@ func (r *hcpClusterReconciler) reconcileTunnelService() error {
 			return nil
 		}
 		return err
+	}
+	if len(existing.Status.LoadBalancer.Ingress) > 0 {
+		r.scope.AzureCluster.Status.TunnelIP = existing.Status.LoadBalancer.Ingress[0].IP
 	}
 	return nil
 }

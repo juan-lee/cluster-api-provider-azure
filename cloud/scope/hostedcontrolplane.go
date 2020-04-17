@@ -19,6 +19,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/klogr"
 	"k8s.io/utils/pointer"
@@ -42,6 +43,7 @@ type HostedControlPlaneScopeParams struct {
 	Machine                 *clusterv1.Machine
 	AzureCluster            *infrav1.AzureCluster
 	AzureHostedControlPlane *infrav1.AzureHostedControlPlane
+	Scheme                  *runtime.Scheme
 }
 
 // NewHostedControlPlaneScope creates a new HostedControlPlaneScope from the supplied parameters.
@@ -62,6 +64,9 @@ func NewHostedControlPlaneScope(params HostedControlPlaneScopeParams) (*HostedCo
 	if params.AzureHostedControlPlane == nil {
 		return nil, errors.New("azure machine is required when creating a HostedControlPlaneScope")
 	}
+	if params.Scheme == nil {
+		return nil, errors.New("Scheme is required")
+	}
 
 	if params.Logger == nil {
 		params.Logger = klogr.New()
@@ -79,6 +84,7 @@ func NewHostedControlPlaneScope(params HostedControlPlaneScopeParams) (*HostedCo
 		AzureHostedControlPlane: params.AzureHostedControlPlane,
 		Logger:                  params.Logger,
 		patchHelper:             helper,
+		scheme:                  params.Scheme,
 	}, nil
 }
 
@@ -87,11 +93,16 @@ type HostedControlPlaneScope struct {
 	logr.Logger
 	client      client.Client
 	patchHelper *patch.Helper
+	scheme      *runtime.Scheme
 
 	Cluster                 *clusterv1.Cluster
 	Machine                 *clusterv1.Machine
 	AzureCluster            *infrav1.AzureCluster
 	AzureHostedControlPlane *infrav1.AzureHostedControlPlane
+}
+
+func (m *HostedControlPlaneScope) Scheme() *runtime.Scheme {
+	return m.scheme
 }
 
 // Location returns the AzureHostedControlPlane location.

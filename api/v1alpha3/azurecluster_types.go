@@ -55,6 +55,8 @@ type AzureClusterStatus struct {
 
 	Bastion VM `json:"bastion,omitempty"`
 
+	TunnelIP string `json:"tunnelIP,omitempty"`
+
 	// Ready is true when the provider resource is ready.
 	// +optional
 	Ready bool `json:"ready"`

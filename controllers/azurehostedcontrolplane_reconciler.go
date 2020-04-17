@@ -18,6 +18,7 @@ import (
 
 	"github.com/pkg/errors"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -27,6 +28,7 @@ import (
 	"sigs.k8s.io/cluster-api-provider-azure/cloud/scope"
 	"sigs.k8s.io/cluster-api-provider-azure/internal/kubeadm"
 	"sigs.k8s.io/cluster-api-provider-azure/internal/tunnel"
+	"sigs.k8s.io/cluster-api/controllers/remote"
 	"sigs.k8s.io/cluster-api/util"
 	kcfg "sigs.k8s.io/cluster-api/util/kubeconfig"
 )
@@ -127,6 +129,66 @@ func (s *azureHCPService) reconcileControlPlaneDeployment() error {
 	return nil
 }
 
+func (s *azureHCPService) reconcileTunnelDeployment() error {
+	ctx := s.clusterScope.Context
+	remoteClient, err := remote.NewClusterClient(ctx, s.hcpScope.Client(), util.ObjectKey(s.hcpScope.Cluster), s.hcpScope.Scheme())
+	if err != nil {
+		return err
+	}
+
+	desired := tunnel.ClusterPodSpec()
+	existing := appsv1.Deployment{}
+	if err := remoteClient.Get(ctx, types.NamespacedName{Namespace: desired.Namespace, Name: desired.Name}, &existing); err != nil {
+		if apierrors.IsNotFound(err) {
+			klog.Infof("Tunnel deployment not found, creating: %s", desired.Name)
+
+			// TODO(jpang): set owner ref
+			if err := remoteClient.Create(ctx, desired); err != nil {
+				return fmt.Errorf("Create tunnel deployment failed: %w", err)
+			}
+			return nil
+		}
+		return fmt.Errorf("Get tunnel deployment failed: %w", err)
+	}
+	return nil
+}
+
+func (s *azureHCPService) reconcileTunnelSecret() error {
+	ctx := s.clusterScope.Context
+	secret := corev1.Secret{}
+	err := s.hcpScope.Client().Get(ctx, types.NamespacedName{Namespace: s.hcpScope.AzureHostedControlPlane.Namespace, Name: "tunnel-cluster"}, &secret)
+	if err != nil {
+		return err
+	}
+	remoteClient, err := remote.NewClusterClient(ctx, s.hcpScope.Client(), util.ObjectKey(s.hcpScope.Cluster), s.hcpScope.Scheme())
+	if err != nil {
+		return err
+	}
+
+	desired := corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "tunnel-client",
+			Namespace: "kube-system",
+		},
+		Data: secret.Data,
+		Type: secret.Type,
+	}
+	existing := corev1.Secret{}
+	if err := remoteClient.Get(ctx, types.NamespacedName{Namespace: desired.Namespace, Name: desired.Name}, &existing); err != nil {
+		if apierrors.IsNotFound(err) {
+			klog.Infof("Tunnel secret not found, creating: %s", desired.Name)
+
+			// TODO(jpang): set owner ref
+			if err := remoteClient.Create(ctx, &desired); err != nil {
+				return fmt.Errorf("Create tunnel secret failed: %w", err)
+			}
+			return nil
+		}
+		return fmt.Errorf("Get tunnel secret failed: %w", err)
+	}
+	return nil
+}
+
 func (s *azureHCPService) reconcilePostControlPlaneInit() error {
 	ctx := s.clusterScope.Context
 
@@ -150,6 +212,12 @@ func (s *azureHCPService) reconcilePostControlPlaneInit() error {
 	}
 	if err := s.kubeadmConfig.EnsureAddons(kubeClient); err != nil {
 		return fmt.Errorf("EnsureAddons: %w", err)
+	}
+	if err := s.reconcileTunnelSecret(); err != nil {
+		return fmt.Errorf("reconcileTunnelSecret: %w", err)
+	}
+	if err := s.reconcileTunnelDeployment(); err != nil {
+		return fmt.Errorf("reconcileTunnelDeployment: %w", err)
 	}
 	return nil
 }
