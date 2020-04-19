@@ -212,7 +212,7 @@ func (m *HostedControlPlaneScope) AdditionalTags() infrav1.Tags {
 }
 
 // GetKubeAdmConfig returns the kubeadm config from the secret in the Machine's bootstrap.dataSecretName.
-func (m *HostedControlPlaneScope) GetKubeAdmConfig() (*kubeadm.Configuration, error) {
+func (m *HostedControlPlaneScope) GetKubeadmConfig() (*kubeadm.Configuration, error) {
 	if m.Machine.Spec.Bootstrap.DataSecretName == nil {
 		return nil, errors.New("error retrieving bootstrap data: linked Machine's bootstrap.dataSecretName is nil")
 	}
@@ -221,5 +221,7 @@ func (m *HostedControlPlaneScope) GetKubeAdmConfig() (*kubeadm.Configuration, er
 	if err := m.client.Get(context.TODO(), key, config); err != nil {
 		return nil, errors.Wrapf(err, "failed to retrieve kubeadm bootstrap config for AzureHostedControlPlane %s/%s", m.Namespace(), m.Name())
 	}
+	config.Spec.InitConfiguration.LocalAPIEndpoint.AdvertiseAddress = "172.17.0.10"
+	config.Spec.InitConfiguration.NodeRegistration.Name = "controlplane"
 	return kubeadm.New(config.Spec.InitConfiguration, config.Spec.ClusterConfiguration)
 }
