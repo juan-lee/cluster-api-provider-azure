@@ -43,6 +43,7 @@ type HostedControlPlaneScopeParams struct {
 	Machine                 *clusterv1.Machine
 	AzureCluster            *infrav1.AzureCluster
 	AzureHostedControlPlane *infrav1.AzureHostedControlPlane
+	Context                 context.Context
 	Scheme                  *runtime.Scheme
 }
 
@@ -95,6 +96,7 @@ type HostedControlPlaneScope struct {
 	patchHelper *patch.Helper
 	scheme      *runtime.Scheme
 
+	Context                 context.Context
 	Cluster                 *clusterv1.Cluster
 	Machine                 *clusterv1.Machine
 	AzureCluster            *infrav1.AzureCluster

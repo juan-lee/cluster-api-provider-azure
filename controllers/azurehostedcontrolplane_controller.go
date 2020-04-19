@@ -117,17 +117,6 @@ func (r *AzureHostedControlPlaneReconciler) Reconcile(req ctrl.Request) (_ ctrl.
 
 	logger = logger.WithValues("azureCluster", azureCluster.Name)
 
-	// Create the cluster scope
-	clusterScope, err := scope.NewClusterScope(scope.ClusterScopeParams{
-		Client:       r.Client,
-		Logger:       logger,
-		Cluster:      cluster,
-		AzureCluster: azureCluster,
-	})
-	if err != nil {
-		return reconcile.Result{}, err
-	}
-
 	// Create the HCP scope
 	hcpScope, err := scope.NewHostedControlPlaneScope(scope.HostedControlPlaneScopeParams{
 		Logger:                  logger,
@@ -137,6 +126,7 @@ func (r *AzureHostedControlPlaneReconciler) Reconcile(req ctrl.Request) (_ ctrl.
 		AzureCluster:            azureCluster,
 		AzureHostedControlPlane: azureHCP,
 		Scheme:                  r.Scheme,
+		Context:                 ctx,
 	})
 	if err != nil {
 		return reconcile.Result{}, errors.Errorf("failed to create scope: %+v", err)
@@ -151,14 +141,14 @@ func (r *AzureHostedControlPlaneReconciler) Reconcile(req ctrl.Request) (_ ctrl.
 
 	// Handle deleted HCP pods
 	if !azureHCP.ObjectMeta.DeletionTimestamp.IsZero() {
-		return r.reconcileDelete(hcpScope, clusterScope)
+		return r.reconcileDelete(hcpScope)
 	}
 
 	// Handle non-deleted HCP pods
-	return r.reconcileNormal(ctx, hcpScope, clusterScope)
+	return r.reconcileNormal(ctx, hcpScope)
 }
 
-func (r *AzureHostedControlPlaneReconciler) reconcileNormal(ctx context.Context, hcpScope *scope.HostedControlPlaneScope, clusterScope *scope.ClusterScope) (reconcile.Result, error) {
+func (r *AzureHostedControlPlaneReconciler) reconcileNormal(ctx context.Context, hcpScope *scope.HostedControlPlaneScope) (reconcile.Result, error) {
 	hcpScope.Info("Reconciling AzureHostedControlPlane")
 	// If the AzureHostedControlPlane is in an error state, return early.
 	if hcpScope.AzureHostedControlPlane.Status.FailureReason != nil || hcpScope.AzureHostedControlPlane.Status.FailureMessage != nil {
@@ -188,7 +178,7 @@ func (r *AzureHostedControlPlaneReconciler) reconcileNormal(ctx context.Context,
 	// Assume that necessary secrets are generated in the cluster controller to be shared by CAPI and the hcp pod spec
 	// TODO: In the future we want to have our own bootstrap provider to do this instead of duplicating the secrets
 	//   and also to have the bootstrap secret in the format we want (we don't need the cloud-init format).
-	hcpService := newAzureHCPService(hcpScope, clusterScope)
+	hcpService := newAzureHCPService(hcpScope)
 
 	if err := hcpService.Reconcile(); err != nil {
 		hcpScope.Error(err, "Error in reconcile control plane")
@@ -210,11 +200,11 @@ func (r *AzureHostedControlPlaneReconciler) reconcileNormal(ctx context.Context,
 	return reconcile.Result{}, nil
 }
 
-func (r *AzureHostedControlPlaneReconciler) reconcileDelete(hcpScope *scope.HostedControlPlaneScope, clusterScope *scope.ClusterScope) (_ reconcile.Result, reterr error) {
+func (r *AzureHostedControlPlaneReconciler) reconcileDelete(hcpScope *scope.HostedControlPlaneScope) (_ reconcile.Result, reterr error) {
 	hcpScope.Info("Handling deleted AzureHostedControlPlane")
 
-	if err := newAzureHCPService(hcpScope, clusterScope).Delete(); err != nil {
-		return reconcile.Result{}, errors.Wrapf(err, "error deleting AzureCluster %s/%s", clusterScope.Namespace(), clusterScope.Name())
+	if err := newAzureHCPService(hcpScope).Delete(); err != nil {
+		return reconcile.Result{}, errors.Wrapf(err, "error deleting AzureCluster %s/%s", hcpScope.Namespace(), hcpScope.Name())
 	}
 
 	defer func() {

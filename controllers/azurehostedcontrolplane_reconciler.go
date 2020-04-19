@@ -36,15 +36,13 @@ import (
 // azureHCPService are list of services required by cluster actuator, easy to create a fake
 type azureHCPService struct {
 	hcpScope      *scope.HostedControlPlaneScope
-	clusterScope  *scope.ClusterScope
 	kubeadmConfig *kubeadm.Configuration
 }
 
 // newAzureHCPService populates all the services based on input scope
-func newAzureHCPService(hcpScope *scope.HostedControlPlaneScope, clusterScope *scope.ClusterScope) *azureHCPService {
+func newAzureHCPService(hcpScope *scope.HostedControlPlaneScope) *azureHCPService {
 	return &azureHCPService{
 		hcpScope:      hcpScope,
-		clusterScope:  clusterScope,
 		kubeadmConfig: initializeKubeadmConfig(hcpScope),
 	}
 }
@@ -78,7 +76,7 @@ func (s *azureHCPService) Delete() error {
 		},
 	}
 	deployment.Namespace = s.hcpScope.Namespace()
-	if err := s.hcpScope.Client().Delete(s.clusterScope.Context, deployment); err != nil {
+	if err := s.hcpScope.Client().Delete(s.hcpScope.Context, deployment); err != nil {
 		return err
 	}
 	return nil
@@ -100,7 +98,7 @@ func (s *azureHCPService) Reconcile() error {
 }
 
 func (s *azureHCPService) reconcileControlPlaneDeployment() error {
-	ctx := s.clusterScope.Context
+	ctx := s.hcpScope.Context
 	desired := s.kubeadmConfig.ControlPlaneDeploymentSpec()
 	desired.Namespace = s.hcpScope.Namespace()
 	desired.Spec.Template.Spec.Containers = append(desired.Spec.Template.Spec.Containers, tunnel.ClientPodSpec().Spec.Containers...)
@@ -130,7 +128,7 @@ func (s *azureHCPService) reconcileControlPlaneDeployment() error {
 }
 
 func (s *azureHCPService) reconcileTunnelDeployment() error {
-	ctx := s.clusterScope.Context
+	ctx := s.hcpScope.Context
 	remoteClient, err := remote.NewClusterClient(ctx, s.hcpScope.Client(), util.ObjectKey(s.hcpScope.Cluster), s.hcpScope.Scheme())
 	if err != nil {
 		return err
@@ -154,7 +152,7 @@ func (s *azureHCPService) reconcileTunnelDeployment() error {
 }
 
 func (s *azureHCPService) reconcileTunnelSecret() error {
-	ctx := s.clusterScope.Context
+	ctx := s.hcpScope.Context
 	secret := corev1.Secret{}
 	err := s.hcpScope.Client().Get(ctx, types.NamespacedName{Namespace: s.hcpScope.AzureHostedControlPlane.Namespace, Name: "tunnel-cluster"}, &secret)
 	if err != nil {
@@ -190,7 +188,7 @@ func (s *azureHCPService) reconcileTunnelSecret() error {
 }
 
 func (s *azureHCPService) reconcilePostControlPlaneInit() error {
-	ctx := s.clusterScope.Context
+	ctx := s.hcpScope.Context
 
 	kubeConfig, err := kcfg.FromSecret(ctx, s.hcpScope.Client(), util.ObjectKey(s.hcpScope.Cluster))
 	if err != nil {
