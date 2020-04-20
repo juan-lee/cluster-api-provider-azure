@@ -282,7 +282,10 @@ func (c *Configuration) ControlPlaneDeploymentSpec() *appsv1.Deployment {
 		combined.Spec.Containers = append(combined.Spec.Containers, pod.Spec.Containers...)
 	}
 
-	etcdPod := etcd.GetEtcdPodSpec(&initConfig.ClusterConfiguration, &initConfig.LocalAPIEndpoint, "controlplane", []etcdutil.Member{})
+	etcdAPIEndpoint := kubeadmapi.APIEndpoint{
+		AdvertiseAddress: "172.17.0.10",
+	}
+	etcdPod := etcd.GetEtcdPodSpec(&initConfig.ClusterConfiguration, &etcdAPIEndpoint, "controlplane", []etcdutil.Member{})
 	for n := range etcdPod.Spec.Containers {
 		if etcdPod.Spec.Containers[n].LivenessProbe != nil && etcdPod.Spec.Containers[n].LivenessProbe.HTTPGet != nil {
 			// Substitute 127.0.0.1 with empty string so liveness will use etcdPod ip instead.

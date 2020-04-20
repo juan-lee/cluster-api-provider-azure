@@ -15,6 +15,7 @@ package scope
 
 import (
 	"context"
+	"strings"
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
@@ -221,7 +222,7 @@ func (m *HostedControlPlaneScope) GetKubeadmConfig() (*kubeadm.Configuration, er
 	if err := m.client.Get(context.TODO(), key, config); err != nil {
 		return nil, errors.Wrapf(err, "failed to retrieve kubeadm bootstrap config for AzureHostedControlPlane %s/%s", m.Namespace(), m.Name())
 	}
-	config.Spec.InitConfiguration.LocalAPIEndpoint.AdvertiseAddress = "172.17.0.10"
+	config.Spec.InitConfiguration.LocalAPIEndpoint.AdvertiseAddress = strings.Split(config.Spec.ClusterConfiguration.ControlPlaneEndpoint, ":")[0]
 	config.Spec.InitConfiguration.NodeRegistration.Name = "controlplane"
 	return kubeadm.New(config.Spec.InitConfiguration, config.Spec.ClusterConfiguration)
 }

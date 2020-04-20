@@ -151,7 +151,7 @@ func (r *AzureHostedControlPlaneReconciler) Reconcile(req ctrl.Request) (_ ctrl.
 
 	// Handle deleted HCP pods
 	if !azureHCP.ObjectMeta.DeletionTimestamp.IsZero() {
-		return r.reconcileDelete(hcpScope)
+		return r.reconcileDelete(ctx, hcpScope)
 	}
 
 	// Handle non-deleted HCP pods
@@ -346,14 +346,12 @@ func (r *AzureHostedControlPlaneReconciler) reconcilePostControlPlaneInit(ctx co
 	return ctrl.Result{}, nil
 }
 
-func (r *AzureHostedControlPlaneReconciler) reconcileDelete(hcpScope *scope.HostedControlPlaneScope) (_ ctrl.Result, reterr error) {
+func (r *AzureHostedControlPlaneReconciler) reconcileDelete(ctx context.Context, hcpScope *scope.HostedControlPlaneScope) (ctrl.Result, error) {
 	hcpScope.Info("Handling deleted AzureHostedControlPlane")
 
 	defer func() {
-		if reterr == nil {
-			// HCP Pod is deleted so remove the finalizer.
-			controllerutil.RemoveFinalizer(hcpScope.AzureHostedControlPlane, infrav1.AzureHostedControlPlaneFinalizer)
-		}
+		// HCP Pod is deleted so remove the finalizer.
+		controllerutil.RemoveFinalizer(hcpScope.AzureHostedControlPlane, infrav1.AzureHostedControlPlaneFinalizer)
 	}()
 
 	deployment := &appsv1.Deployment{
@@ -365,7 +363,7 @@ func (r *AzureHostedControlPlaneReconciler) reconcileDelete(hcpScope *scope.Host
 		},
 	}
 	deployment.Namespace = hcpScope.Namespace()
-	if err := hcpScope.Client().Delete(hcpScope.Context, deployment); err != nil {
+	if err := hcpScope.Client().Delete(ctx, deployment); err != nil {
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil

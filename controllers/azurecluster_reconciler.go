@@ -19,6 +19,7 @@ package controllers
 import (
 	"fmt"
 	"hash/fnv"
+	"strings"
 
 	"github.com/pkg/errors"
 	appsv1 "k8s.io/api/apps/v1"
@@ -605,9 +606,9 @@ func (r *hcpClusterReconciler) reconcileControlPlaneSecrets() error {
 	}
 
 	config := kubeadm.Configuration{}
-	config.InitConfiguration.LocalAPIEndpoint.AdvertiseAddress = "172.17.0.10"
 	config.InitConfiguration.NodeRegistration.Name = "controlplane"
 	config.ClusterConfiguration.ControlPlaneEndpoint = r.scope.Network().APIServerIP.DNSName
+	config.InitConfiguration.LocalAPIEndpoint.AdvertiseAddress = strings.Split(config.ClusterConfiguration.ControlPlaneEndpoint, ":")[0]
 	if r.scope.Cluster.Spec.ClusterNetwork.Services != nil {
 		config.ClusterConfiguration.Networking.ServiceSubnet = r.scope.Cluster.Spec.ClusterNetwork.Services.CIDRBlocks[0]
 	}
