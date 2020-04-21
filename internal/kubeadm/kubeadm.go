@@ -44,12 +44,10 @@ import (
 	bootstraptokennode "k8s.io/kubernetes/cmd/kubeadm/app/phases/bootstraptoken/node"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/certs"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/controlplane"
-	"k8s.io/kubernetes/cmd/kubeadm/app/phases/etcd"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/kubeconfig"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/kubelet"
 	"k8s.io/kubernetes/cmd/kubeadm/app/phases/uploadconfig"
 	"k8s.io/kubernetes/cmd/kubeadm/app/util/apiclient"
-	etcdutil "k8s.io/kubernetes/cmd/kubeadm/app/util/etcd"
 	capikubeadmv1beta1 "sigs.k8s.io/cluster-api/bootstrap/kubeadm/types/v1beta1"
 )
 
@@ -125,6 +123,7 @@ func (c *Configuration) GenerateSecrets() ([]corev1.Secret, error) {
 		return nil, err
 	}
 
+	// etcd certs are required by the etcd operator: https://github.com/coreos/etcd-operator/blob/master/doc/user/cluster_tls.md
 	secrets := []corev1.Secret{
 		{
 			ObjectMeta: metav1.ObjectMeta{
@@ -135,6 +134,24 @@ func (c *Configuration) GenerateSecrets() ([]corev1.Secret, error) {
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "etcd-certs",
+			},
+			Data: map[string][]byte{},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "etcd-peer-certs",
+			},
+			Data: map[string][]byte{},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "etcd-server-certs",
+			},
+			Data: map[string][]byte{},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "etcd-operator-certs",
 			},
 			Data: map[string][]byte{},
 		},
@@ -158,6 +175,9 @@ func (c *Configuration) GenerateSecrets() ([]corev1.Secret, error) {
 				return nil, err
 			}
 			secrets[0].Data[file.Name()] = contents
+			if strings.HasPrefix(file.Name(), "apiserver-etcd-client") {
+				secrets[4].Data[strings.TrimPrefix(file.Name(), "apiserver-")] = contents
+			}
 		}
 		if file.IsDir() && file.Name() == "etcd" {
 			etcdFiles, err := ioutil.ReadDir(fmt.Sprintf("%s/etcd", certsDir))
@@ -170,6 +190,16 @@ func (c *Configuration) GenerateSecrets() ([]corev1.Secret, error) {
 					return nil, err
 				}
 				secrets[1].Data[etcdFile.Name()] = contents
+				if strings.HasPrefix(etcdFile.Name(), "peer") {
+					secrets[2].Data[etcdFile.Name()] = contents
+				} else if strings.HasPrefix(etcdFile.Name(), "server") {
+					secrets[3].Data[etcdFile.Name()] = contents
+				} else if etcdFile.Name() == "ca.crt" {
+					// The etcd-ca cert has signed the other certs
+					secrets[2].Data["peer-ca.crt"] = contents
+					secrets[3].Data["server-ca.crt"] = contents
+					secrets[4].Data["etcd-client-ca.crt"] = contents
+				}
 			}
 		}
 	}
@@ -187,7 +217,7 @@ func (c *Configuration) GenerateSecrets() ([]corev1.Secret, error) {
 		if err != nil {
 			return nil, err
 		}
-		secrets[2].Data[file.Name()] = contents
+		secrets[4].Data[file.Name()] = contents
 	}
 	return secrets, nil
 }
@@ -282,22 +312,22 @@ func (c *Configuration) ControlPlaneDeploymentSpec() *appsv1.Deployment {
 		combined.Spec.Containers = append(combined.Spec.Containers, pod.Spec.Containers...)
 	}
 
-	etcdAPIEndpoint := kubeadmapi.APIEndpoint{
-		AdvertiseAddress: "172.17.0.10",
-	}
-	etcdPod := etcd.GetEtcdPodSpec(&initConfig.ClusterConfiguration, &etcdAPIEndpoint, "controlplane", []etcdutil.Member{})
-	for n := range etcdPod.Spec.Containers {
-		if etcdPod.Spec.Containers[n].LivenessProbe != nil && etcdPod.Spec.Containers[n].LivenessProbe.HTTPGet != nil {
-			// Substitute 127.0.0.1 with empty string so liveness will use etcdPod ip instead.
-			etcdPod.Spec.Containers[n].LivenessProbe.HTTPGet.Host = ""
-		}
-		for i := range etcdPod.Spec.Containers[n].Command {
-			etcdPod.Spec.Containers[n].Command[i] = strings.ReplaceAll(etcdPod.Spec.Containers[n].Command[i], "--listen-client-urls=https://127.0.0.1:2379,https://172.17.0.10:2379", "--listen-client-urls=https://0.0.0.0:2379")
-			etcdPod.Spec.Containers[n].Command[i] = strings.ReplaceAll(etcdPod.Spec.Containers[n].Command[i], "--listen-metrics-urls=http://127.0.0.1:2381", "--listen-metrics-urls=http://0.0.0.0:2381")
-			etcdPod.Spec.Containers[n].Command[i] = strings.ReplaceAll(etcdPod.Spec.Containers[n].Command[i], "--listen-peer-urls=https://172.17.0.10:2380", "--listen-peer-urls=https://0.0.0.0:2380")
-		}
-	}
-	combined.Spec.Containers = append(combined.Spec.Containers, etcdPod.Spec.Containers...)
+	// etcdAPIEndpoint := kubeadmapi.APIEndpoint{
+	// 	AdvertiseAddress: "172.17.0.10",
+	// }
+	// etcdPod := etcd.GetEtcdPodSpec(&initConfig.ClusterConfiguration, &etcdAPIEndpoint, "controlplane", []etcdutil.Member{})
+	// for n := range etcdPod.Spec.Containers {
+	// 	if etcdPod.Spec.Containers[n].LivenessProbe != nil && etcdPod.Spec.Containers[n].LivenessProbe.HTTPGet != nil {
+	// 		// Substitute 127.0.0.1 with empty string so liveness will use etcdPod ip instead.
+	// 		etcdPod.Spec.Containers[n].LivenessProbe.HTTPGet.Host = ""
+	// 	}
+	// 	for i := range etcdPod.Spec.Containers[n].Command {
+	// 		etcdPod.Spec.Containers[n].Command[i] = strings.ReplaceAll(etcdPod.Spec.Containers[n].Command[i], "--listen-client-urls=https://127.0.0.1:2379,https://172.17.0.10:2379", "--listen-client-urls=https://0.0.0.0:2379")
+	// 		etcdPod.Spec.Containers[n].Command[i] = strings.ReplaceAll(etcdPod.Spec.Containers[n].Command[i], "--listen-metrics-urls=http://127.0.0.1:2381", "--listen-metrics-urls=http://0.0.0.0:2381")
+	// 		etcdPod.Spec.Containers[n].Command[i] = strings.ReplaceAll(etcdPod.Spec.Containers[n].Command[i], "--listen-peer-urls=https://172.17.0.10:2380", "--listen-peer-urls=https://0.0.0.0:2380")
+	// 	}
+	// }
+	// combined.Spec.Containers = append(combined.Spec.Containers, etcdPod.Spec.Containers...)
 
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{

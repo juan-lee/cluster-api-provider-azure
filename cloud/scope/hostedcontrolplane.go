@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/cluster-api-provider-azure/internal/kubeadm"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1alpha3"
 	bootstrapv1 "sigs.k8s.io/cluster-api/bootstrap/kubeadm/api/v1alpha3"
+	capikubeadmv1beta1 "sigs.k8s.io/cluster-api/bootstrap/kubeadm/types/v1beta1"
 	"sigs.k8s.io/cluster-api/controllers/noderefutil"
 	capierrors "sigs.k8s.io/cluster-api/errors"
 	"sigs.k8s.io/cluster-api/util"
@@ -224,5 +225,14 @@ func (m *HostedControlPlaneScope) GetKubeadmConfig() (*kubeadm.Configuration, er
 	}
 	config.Spec.InitConfiguration.LocalAPIEndpoint.AdvertiseAddress = strings.Split(config.Spec.ClusterConfiguration.ControlPlaneEndpoint, ":")[0]
 	config.Spec.InitConfiguration.NodeRegistration.Name = "controlplane"
+
+	config.Spec.ClusterConfiguration.Etcd = capikubeadmv1beta1.Etcd{
+		External: &capikubeadmv1beta1.ExternalEtcd{
+			Endpoints: []string{"https://etcd-cluster-client:2379"},
+			CAFile:    "/etc/kubernetes/pki/etcd/ca.crt",
+			CertFile:  "/etc/kubernetes/pki/apiserver-etcd-client.crt",
+			KeyFile:   "/etc/kubernetes/pki/apiserver-etcd-client.key",
+		},
+	}
 	return kubeadm.New(config.Spec.InitConfiguration, config.Spec.ClusterConfiguration)
 }
