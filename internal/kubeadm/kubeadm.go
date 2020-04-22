@@ -100,7 +100,7 @@ func New(init *capikubeadmv1beta1.InitConfiguration, clusterConfig *capikubeadmv
 	return &config, nil
 }
 
-func (c *Configuration) GenerateSecrets() ([]corev1.Secret, error) {
+func (c *Configuration) GenerateSecrets(namespace string) ([]corev1.Secret, error) {
 	tmpdir, err := ioutil.TempDir("", "kubernetes")
 	if err != nil {
 		return nil, err
@@ -115,6 +115,24 @@ func (c *Configuration) GenerateSecrets() ([]corev1.Secret, error) {
 	scheme.Scheme.Convert(&c.InitConfiguration, &initConfig, nil)
 	scheme.Scheme.Convert(&c.ClusterConfiguration, &initConfig.ClusterConfiguration, nil)
 	initConfig.ClusterConfiguration.CertificatesDir = certsDir
+	initConfig.ClusterConfiguration.Etcd = kubeadmapi.Etcd{
+		// Generally Local and External are mutually exclusive configs,
+		// but adding Local here to generate etcd certs with the correct SANs for the etcd operator.
+		// Refer to https://github.com/kubernetes/kubernetes/blob/master/cmd/kubeadm/app/util/pkiutil/pki_helpers.go#L408
+		Local: &kubeadmapi.LocalEtcd{
+			// Specification on SAN: https://github.com/coreos/etcd-operator/blob/master/doc/user/cluster_tls.md
+			ServerCertSANs: []string{
+				"etcd-cluster-client",
+				fmt.Sprintf("*.etcd-cluster-client.%s.svc", namespace),
+				fmt.Sprintf("*.etcd-cluster.%s.svc", namespace),
+				"localhost",
+			},
+			PeerCertSANs: []string{
+				fmt.Sprintf("*.etcd-cluster.%s.svc", namespace),
+				fmt.Sprintf("*.etcd-cluster.%s.svc.cluster.local", namespace),
+			},
+		},
+	}
 
 	if err := certs.CreatePKIAssets(&initConfig); err != nil {
 		return nil, err
@@ -217,7 +235,7 @@ func (c *Configuration) GenerateSecrets() ([]corev1.Secret, error) {
 		if err != nil {
 			return nil, err
 		}
-		secrets[4].Data[file.Name()] = contents
+		secrets[5].Data[file.Name()] = contents
 	}
 	return secrets, nil
 }
@@ -312,23 +330,8 @@ func (c *Configuration) ControlPlaneDeploymentSpec() *appsv1.Deployment {
 		combined.Spec.Containers = append(combined.Spec.Containers, pod.Spec.Containers...)
 	}
 
-	// etcdAPIEndpoint := kubeadmapi.APIEndpoint{
-	// 	AdvertiseAddress: "172.17.0.10",
-	// }
-	// etcdPod := etcd.GetEtcdPodSpec(&initConfig.ClusterConfiguration, &etcdAPIEndpoint, "controlplane", []etcdutil.Member{})
-	// for n := range etcdPod.Spec.Containers {
-	// 	if etcdPod.Spec.Containers[n].LivenessProbe != nil && etcdPod.Spec.Containers[n].LivenessProbe.HTTPGet != nil {
-	// 		// Substitute 127.0.0.1 with empty string so liveness will use etcdPod ip instead.
-	// 		etcdPod.Spec.Containers[n].LivenessProbe.HTTPGet.Host = ""
-	// 	}
-	// 	for i := range etcdPod.Spec.Containers[n].Command {
-	// 		etcdPod.Spec.Containers[n].Command[i] = strings.ReplaceAll(etcdPod.Spec.Containers[n].Command[i], "--listen-client-urls=https://127.0.0.1:2379,https://172.17.0.10:2379", "--listen-client-urls=https://0.0.0.0:2379")
-	// 		etcdPod.Spec.Containers[n].Command[i] = strings.ReplaceAll(etcdPod.Spec.Containers[n].Command[i], "--listen-metrics-urls=http://127.0.0.1:2381", "--listen-metrics-urls=http://0.0.0.0:2381")
-	// 		etcdPod.Spec.Containers[n].Command[i] = strings.ReplaceAll(etcdPod.Spec.Containers[n].Command[i], "--listen-peer-urls=https://172.17.0.10:2380", "--listen-peer-urls=https://0.0.0.0:2380")
-	// 	}
-	// }
-	// combined.Spec.Containers = append(combined.Spec.Containers, etcdPod.Spec.Containers...)
-
+	// var replicas int32
+	// replicas = 3
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "controlplane",
@@ -337,6 +340,7 @@ func (c *Configuration) ControlPlaneDeploymentSpec() *appsv1.Deployment {
 			},
 		},
 		Spec: appsv1.DeploymentSpec{
+			// Replicas: &replicas,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					"app": "controlplane",

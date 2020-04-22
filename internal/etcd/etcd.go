@@ -76,8 +76,9 @@ func EtcdCluster() *etcdv1beta2.EtcdCluster {
 			},
 		},
 		Spec: etcdv1beta2.ClusterSpec{
-			Size:    3,
-			Version: "3.2.13",
+			Size: 3,
+			// https://github.com/kubernetes/kubernetes/issues/81508#issuecomment-590646553
+			Version: "3.1.19",
 			TLS: &etcdv1beta2.TLSPolicy{
 				Static: &etcdv1beta2.StaticTLS{
 					Member: &etcdv1beta2.MemberSecret{

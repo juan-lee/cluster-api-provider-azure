@@ -219,13 +219,13 @@ func (m *HostedControlPlaneScope) GetKubeadmConfig() (*kubeadm.Configuration, er
 		return nil, errors.New("error retrieving bootstrap data: linked Machine's bootstrap.dataSecretName is nil")
 	}
 	config := &bootstrapv1.KubeadmConfig{}
-	key := types.NamespacedName{Namespace: m.Machine.Spec.Bootstrap.ConfigRef.Namespace, Name: m.Machine.Spec.Bootstrap.ConfigRef.Name}
+	namespace := m.Machine.Spec.Bootstrap.ConfigRef.Namespace
+	key := types.NamespacedName{Namespace: namespace, Name: m.Machine.Spec.Bootstrap.ConfigRef.Name}
 	if err := m.client.Get(context.TODO(), key, config); err != nil {
 		return nil, errors.Wrapf(err, "failed to retrieve kubeadm bootstrap config for AzureHostedControlPlane %s/%s", m.Namespace(), m.Name())
 	}
 	config.Spec.InitConfiguration.LocalAPIEndpoint.AdvertiseAddress = strings.Split(config.Spec.ClusterConfiguration.ControlPlaneEndpoint, ":")[0]
 	config.Spec.InitConfiguration.NodeRegistration.Name = "controlplane"
-
 	config.Spec.ClusterConfiguration.Etcd = capikubeadmv1beta1.Etcd{
 		External: &capikubeadmv1beta1.ExternalEtcd{
 			Endpoints: []string{"https://etcd-cluster-client:2379"},

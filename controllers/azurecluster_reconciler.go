@@ -630,7 +630,7 @@ func (r *hcpClusterReconciler) reconcileControlPlaneSecrets() error {
 
 	// Generate certs and create secrets
 	klog.Info("Reconciling tunnel secrets")
-	secrets, err := config.GenerateSecrets()
+	secrets, err := config.GenerateSecrets(r.scope.Namespace())
 	if err != nil {
 		return err
 	}
