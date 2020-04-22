@@ -330,8 +330,8 @@ func (c *Configuration) ControlPlaneDeploymentSpec() *appsv1.Deployment {
 		combined.Spec.Containers = append(combined.Spec.Containers, pod.Spec.Containers...)
 	}
 
-	// var replicas int32
-	// replicas = 3
+	var replicas int32
+	replicas = 3
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "controlplane",
@@ -340,7 +340,7 @@ func (c *Configuration) ControlPlaneDeploymentSpec() *appsv1.Deployment {
 			},
 		},
 		Spec: appsv1.DeploymentSpec{
-			// Replicas: &replicas,
+			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					"app": "controlplane",
