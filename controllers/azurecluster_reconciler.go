@@ -21,6 +21,7 @@ import (
 	"hash/fnv"
 	"strings"
 
+	etcdv1beta2 "github.com/coreos/etcd-operator/pkg/apis/etcd/v1beta2"
 	"github.com/pkg/errors"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -39,6 +40,7 @@ import (
 	"sigs.k8s.io/cluster-api-provider-azure/cloud/services/securitygroups"
 	"sigs.k8s.io/cluster-api-provider-azure/cloud/services/subnets"
 	"sigs.k8s.io/cluster-api-provider-azure/cloud/services/virtualnetworks"
+	"sigs.k8s.io/cluster-api-provider-azure/internal/etcd"
 	"sigs.k8s.io/cluster-api-provider-azure/internal/kubeadm"
 	"sigs.k8s.io/cluster-api-provider-azure/internal/tunnel"
 )
@@ -505,10 +507,13 @@ func (r *hcpClusterReconciler) Reconcile() error {
 		return errors.Wrap(err, "failed to reconcile tunnel")
 	}
 	if err := r.reconcileControlPlaneService(); err != nil {
-		return errors.Wrap(err, "failed to hosted control plane load balancer service")
+		return errors.Wrap(err, "failed to reconcile hosted control plane load balancer service")
 	}
 	if err := r.reconcileControlPlaneSecrets(); err != nil {
-		return errors.Wrap(err, "failed to hosted control plane secrets")
+		return errors.Wrap(err, "failed to reconcile hosted control plane secrets")
+	}
+	if err := r.reconcileEtcd(); err != nil {
+		return errors.Wrap(err, "failed to reconcile etcd cluster")
 	}
 	return nil
 }
@@ -625,7 +630,7 @@ func (r *hcpClusterReconciler) reconcileControlPlaneSecrets() error {
 
 	// Generate certs and create secrets
 	klog.Info("Reconciling tunnel secrets")
-	secrets, err := config.GenerateSecrets()
+	secrets, err := config.GenerateSecrets(r.scope.Namespace())
 	if err != nil {
 		return err
 	}
@@ -666,7 +671,7 @@ func (r *hcpClusterReconciler) reconcileKubernetesCerts(cert *corev1.Secret) err
 			return err
 		}
 	}
-	if cert.Name == "k8s-certs" {
+	if cert.Name == "etcd-certs" {
 		if err := r.reconcileCertificate("ca", "etcd", cert); err != nil {
 			return err
 		}
@@ -732,6 +737,55 @@ func (r *hcpClusterReconciler) reconcileKubeconfig(cert *corev1.Secret) error {
 	return nil
 }
 
+func (r *hcpClusterReconciler) reconcileEtcd() error {
+	// setup RBAC for etcd operator (added role & rolebinding to rbac directory)
+	// create etcd operator deployment
+	if err := r.reconcileEtcdOperator(); err != nil {
+		return err
+	}
+	// create etcd cluster
+	if err := r.reconcileEtcdCluster(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *hcpClusterReconciler) reconcileEtcdOperator() error {
+	desired := etcd.EtcdOperatorDeploymentSpec()
+	desired.Namespace = r.scope.Namespace()
+	existing := appsv1.Deployment{}
+	if err := r.scope.Client().Get(r.scope.Context, types.NamespacedName{Namespace: desired.Namespace, Name: desired.Name}, &existing); err != nil {
+		if apierrors.IsNotFound(err) {
+			klog.Infof("Etcd Operator deployment not found, creating: %s", desired.Name)
+
+			if err := r.scope.Client().Create(r.scope.Context, desired); err != nil {
+				return err
+			}
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+func (r *hcpClusterReconciler) reconcileEtcdCluster() error {
+	desired := etcd.EtcdCluster()
+	desired.Namespace = r.scope.Namespace()
+	existing := etcdv1beta2.EtcdCluster{}
+	if err := r.scope.Client().Get(r.scope.Context, types.NamespacedName{Namespace: desired.Namespace, Name: desired.Name}, &existing); err != nil {
+		if apierrors.IsNotFound(err) {
+			klog.Infof("Etcd Cluster not found, creating: %s", desired.Name)
+
+			if err := r.scope.Client().Create(r.scope.Context, desired); err != nil {
+				return err
+			}
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
 func (r *hcpClusterReconciler) checkIfCertsExist() (bool, error) {
 	// check if certs have already been generated
 	secrets := []corev1.Secret{
@@ -744,6 +798,24 @@ func (r *hcpClusterReconciler) checkIfCertsExist() (bool, error) {
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "etcd-certs",
+			},
+			Data: map[string][]byte{},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "etcd-peer-certs",
+			},
+			Data: map[string][]byte{},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "etcd-server-certs",
+			},
+			Data: map[string][]byte{},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "etcd-operator-certs",
 			},
 			Data: map[string][]byte{},
 		},

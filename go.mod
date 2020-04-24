@@ -9,6 +9,7 @@ require (
 	github.com/Azure/go-autorest/autorest/to v0.3.0
 	github.com/Azure/go-autorest/autorest/validation v0.2.0 // indirect
 	github.com/blang/semver v3.5.1+incompatible
+	github.com/coreos/etcd-operator v0.9.4
 	github.com/go-logr/logr v0.1.0
 	github.com/go-openapi/spec v0.19.5 // indirect
 	github.com/golang/mock v1.4.0

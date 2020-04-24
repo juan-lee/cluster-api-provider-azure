@@ -38,6 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
+	etcdv1beta2 "github.com/coreos/etcd-operator/pkg/apis/etcd/v1beta2"
 	infrav1alpha2 "sigs.k8s.io/cluster-api-provider-azure/api/v1alpha2"
 	infrastructurev1alpha3 "sigs.k8s.io/cluster-api-provider-azure/api/v1alpha3"
 	infrav1alpha3 "sigs.k8s.io/cluster-api-provider-azure/api/v1alpha3"
@@ -59,6 +60,7 @@ func init() {
 	_ = clusterv1.AddToScheme(scheme)
 	_ = infrastructurev1alpha3.AddToScheme(scheme)
 	_ = bootstrapv1.AddToScheme(scheme)
+	_ = etcdv1beta2.AddToScheme(scheme)
 	// +kubebuilder:scaffold:scheme
 }
 

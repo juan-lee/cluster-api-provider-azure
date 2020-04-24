@@ -251,7 +251,7 @@ func (r *AzureHostedControlPlaneReconciler) reconcileControlPlaneDeployment(ctx 
 	// 	return fmt.Errorf("Update control plane pod failed: %w", err)
 	// }
 
-	if existing.Status.ReadyReplicas != 1 {
+	if existing.Status.ReadyReplicas == 0 {
 		return ctrl.Result{}, errors.New("Control Plane Pod isn't ready")
 	}
 	return ctrl.Result{}, nil
