@@ -98,5 +98,8 @@ func (s *azureMachineService) Delete(ctx context.Context) error {
 		}
 	}
 
+	if err := s.flexibleScaleSetSvc.Delete(ctx); err != nil {
+		return errors.Wrap(err, "failed to delete flexible scale set")
+	}
 	return nil
 }
