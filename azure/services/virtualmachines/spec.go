@@ -41,6 +41,7 @@ type VMSpec struct {
 	SSHKeyData             string
 	Size                   string
 	AvailabilitySetID      string
+	FlexibleScaleSetID     string
 	Zone                   string
 	Identity               infrav1.VMIdentity
 	OSDisk                 infrav1.OSDisk
@@ -123,6 +124,7 @@ func (s *VMSpec) Parameters(existing interface{}) (params interface{}, err error
 		VirtualMachineProperties: &compute.VirtualMachineProperties{
 			AdditionalCapabilities: s.generateAdditionalCapabilities(),
 			AvailabilitySet:        s.getAvailabilitySet(),
+			VirtualMachineScaleSet: s.getVMSS(),
 			HardwareProfile: &compute.HardwareProfile{
 				VMSize: compute.VirtualMachineSizeTypes(s.Size),
 			},
@@ -321,6 +323,14 @@ func (s *VMSpec) getAvailabilitySet() *compute.SubResource {
 	var as *compute.SubResource
 	if s.AvailabilitySetID != "" {
 		as = &compute.SubResource{ID: &s.AvailabilitySetID}
+	}
+	return as
+}
+
+func (s *VMSpec) getVMSS() *compute.SubResource {
+	var as *compute.SubResource
+	if s.FlexibleScaleSetID != "" {
+		as = &compute.SubResource{ID: &s.FlexibleScaleSetID}
 	}
 	return as
 }

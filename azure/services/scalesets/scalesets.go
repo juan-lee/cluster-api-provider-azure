@@ -63,7 +63,7 @@ type (
 // New creates a new service.
 func New(scope ScaleSetScope, skuCache *resourceskus.Cache) *Service {
 	return &Service{
-		Client:           NewClient(scope),
+		// Client:           NewClient(scope),
 		Scope:            scope,
 		resourceSKUCache: skuCache,
 	}

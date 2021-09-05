@@ -97,6 +97,5 @@ func (s *azureMachineService) Delete(ctx context.Context) error {
 			return errors.Wrapf(err, "failed to delete AzureMachine service %s", s.services[i].Name())
 		}
 	}
-
 	return nil
 }

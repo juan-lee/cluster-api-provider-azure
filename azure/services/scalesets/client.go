@@ -26,7 +26,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2021-04-01/compute"
 	"github.com/Azure/go-autorest/autorest"
 	azureautorest "github.com/Azure/go-autorest/autorest/azure"
-	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/pkg/errors"
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-azure/azure"
@@ -68,8 +67,6 @@ type (
 		compute.VirtualMachineScaleSetsDeleteFuture
 	}
 )
-
-var _ Client = &AzureClient{}
 
 // NewClient creates a new VMSS client from subscription ID.
 func NewClient(auth azure.Authorizer) *AzureClient {
@@ -136,39 +133,27 @@ func (ac *AzureClient) List(ctx context.Context, resourceGroupName string) ([]co
 }
 
 // Get retrieves information about the model view of a virtual machine scale set.
-func (ac *AzureClient) Get(ctx context.Context, resourceGroupName, vmssName string) (compute.VirtualMachineScaleSet, error) {
+func (ac *AzureClient) Get(ctx context.Context, spec azure.ResourceSpecGetter) (result interface{}, err error) {
 	ctx, _, done := tele.StartSpanWithLogger(ctx, "scalesets.AzureClient.Get")
 	defer done()
 
-	return ac.scalesets.Get(ctx, resourceGroupName, vmssName, "")
+	return ac.scalesets.Get(ctx, spec.ResourceGroupName(), spec.ResourceName(), "")
 }
 
-// CreateOrUpdateAsync the operation to create or update a virtual machine scale set without waiting for the operation
-// to complete.
-func (ac *AzureClient) CreateOrUpdateAsync(ctx context.Context, resourceGroupName, vmssName string, vmss compute.VirtualMachineScaleSet) (*infrav1.Future, error) {
-	ctx, _, done := tele.StartSpanWithLogger(ctx, "scalesets.AzureClient.CreateOrUpdateAsync")
+// CreateOrUpdateAsync creates or updates a scale set asynchronously.
+// It sends a PUT request to Azure and if accepted without error, the func will return a Future which can be used to track the ongoing
+// progress of the operation.
+func (ac *AzureClient) CreateOrUpdateAsync(ctx context.Context, spec azure.ResourceSpecGetter, parameters interface{}) (result interface{}, future azureautorest.FutureAPI, err error) {
+	ctx, _, done := tele.StartSpanWithLogger(ctx, "scaleset.AzureClient.CreateOrUpdateAsync")
 	defer done()
 
-	future, err := ac.scalesets.CreateOrUpdate(ctx, resourceGroupName, vmssName, vmss)
-	if err != nil {
-		return nil, err
+	vmss, ok := parameters.(compute.VirtualMachineScaleSet)
+	if !ok {
+		return nil, nil, errors.Errorf("%T is not a compute.VirtualMachineScaleSet", parameters)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, reconciler.DefaultAzureCallTimeout)
-	defer cancel()
-
-	err = future.WaitForCompletionRef(ctx, ac.scalesets.Client)
-	if err != nil {
-		// if an error occurs, return the future.
-		// this means the long-running operation didn't finish in the specified timeout.
-		return converters.SDKToFuture(&future, infrav1.PutFuture, serviceName, vmssName, resourceGroupName)
-	}
-
-	// todo: this returns the result VMSS, we should use it
-	_, err = future.Result(ac.scalesets)
-
-	// if the operation completed, return a nil future.
-	return nil, err
+	result, err = ac.scalesets.CreateOrUpdate(ctx, spec.ResourceGroupName(), spec.ResourceName(), vmss)
+	return result, nil, err
 }
 
 // UpdateAsync update a VM scale set without waiting for the result of the operation. UpdateAsync sends a PATCH
@@ -282,35 +267,20 @@ func (ac *AzureClient) UpdateInstances(ctx context.Context, resourceGroupName, v
 	return err
 }
 
-// DeleteAsync is the operation to delete a virtual machine scale set asynchronously. DeleteAsync sends a DELETE
+// DeleteAsync deletes a vmss set asynchronously. DeleteAsync sends a DELETE
 // request to Azure and if accepted without error, the func will return a Future which can be used to track the ongoing
 // progress of the operation.
-//
-// Parameters:
-//   resourceGroupName - the name of the resource group.
-//   vmssName - the name of the VM scale set to create or update. parameters - the scale set object.
-func (ac *AzureClient) DeleteAsync(ctx context.Context, resourceGroupName, vmssName string) (*infrav1.Future, error) {
-	ctx, _, done := tele.StartSpanWithLogger(ctx, "scalesets.AzureClient.DeleteAsync")
+func (ac *AzureClient) DeleteAsync(ctx context.Context, spec azure.ResourceSpecGetter) (future azureautorest.FutureAPI, err error) {
+	ctx, _, done := tele.StartSpanWithLogger(ctx, "scalesets.AzureClient.Delete")
 	defer done()
 
-	future, err := ac.scalesets.Delete(ctx, resourceGroupName, vmssName, to.BoolPtr(false))
+	forceDelete := true
+	_, err = ac.scalesets.Delete(ctx, spec.ResourceGroupName(), spec.ResourceName(), &forceDelete)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed deleting vmss named %q", vmssName)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, reconciler.DefaultAzureCallTimeout)
-	defer cancel()
-
-	err = future.WaitForCompletionRef(ctx, ac.scalesets.Client)
-	if err != nil {
-		// if an error occurs, return the future.
-		// this means the long-running operation didn't finish in the specified timeout.
-		return converters.SDKToFuture(&future, infrav1.DeleteFuture, serviceName, vmssName, resourceGroupName)
-	}
-	_, err = future.Result(ac.scalesets)
-
-	// if the operation completed, return a nil future.
-	return nil, err
+	return nil, nil
 }
 
 // Result wraps the delete result so that we can treat it generically. The only thing we care about is if the delete
@@ -323,4 +293,23 @@ func (da *deleteResultAdapter) Result(client compute.VirtualMachineScaleSetsClie
 // Result returns the Result so that we can treat it generically.
 func (g *genericScaleSetFutureImpl) Result(client compute.VirtualMachineScaleSetsClient) (compute.VirtualMachineScaleSet, error) {
 	return g.result(client)
+}
+
+// Result fetches the result of a long-running operation future.
+func (ac *AzureClient) Result(ctx context.Context, future azureautorest.FutureAPI, futureType string) (result interface{}, err error) {
+	// Result is a no-op for resource groups as only Delete operations return a future.
+	return nil, nil
+}
+
+// IsDone returns true if the long-running operation has completed.
+func (ac *AzureClient) IsDone(ctx context.Context, future azureautorest.FutureAPI) (isDone bool, err error) {
+	ctx, _, done := tele.StartSpanWithLogger(ctx, "scalesetups.AzureClient.IsDone")
+	defer done()
+
+	isDone, err = future.DoneWithContext(ctx, ac.scalesets)
+	if err != nil {
+		return false, errors.Wrap(err, "failed checking if the operation was complete")
+	}
+
+	return isDone, nil
 }

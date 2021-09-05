@@ -157,6 +157,7 @@ func (m *MachineScope) VMSpec() azure.ResourceSpecGetter {
 		OSDisk:                 m.AzureMachine.Spec.OSDisk,
 		DataDisks:              m.AzureMachine.Spec.DataDisks,
 		AvailabilitySetID:      m.AvailabilitySetID(),
+		FlexibleScaleSetID:     m.FlexibleScaleSetID(),
 		Zone:                   m.AvailabilityZone(),
 		Identity:               m.AzureMachine.Spec.Identity,
 		UserAssignedIdentities: m.AzureMachine.Spec.UserAssignedIdentities,
@@ -461,6 +462,34 @@ func (m *MachineScope) AvailabilitySetID() string {
 	var asID string
 	if asName, ok := m.AvailabilitySet(); ok {
 		asID = azure.AvailabilitySetID(m.SubscriptionID(), m.ResourceGroup(), asName)
+	}
+	return asID
+}
+
+// FlexibleScaleSet returns the flexible scale set for this machine if available.
+func (m *MachineScope) FlexibleScaleSet() (string, bool) {
+	if m.AvailabilitySetEnabled() || m.IsControlPlane() {
+		return "", false
+	}
+
+	// get machine deployment name from labels for machines that maybe part of a machine deployment.
+	if mdName, ok := m.Machine.Labels[clusterv1.MachineDeploymentLabelName]; ok {
+		return mdName, true
+	}
+
+	// if machine deployment name label is not available, use machine set name.
+	if msName, ok := m.Machine.Labels[clusterv1.MachineSetLabelName]; ok {
+		return azure.GenerateAvailabilitySetName(m.ClusterName(), msName), true
+	}
+
+	return "", false
+}
+
+// FlexibleScaleSetID returns the scale set for this machine, or "" if there is no scale set.
+func (m *MachineScope) FlexibleScaleSetID() string {
+	var asID string
+	if asName, ok := m.FlexibleScaleSet(); ok {
+		asID = azure.FlexibleScaleSetID(m.SubscriptionID(), m.ResourceGroup(), asName)
 	}
 	return asID
 }
