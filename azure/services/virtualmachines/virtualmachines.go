@@ -54,6 +54,7 @@ type VMScope interface {
 	SetAnnotation(string, string)
 	ProviderID() string
 	AvailabilitySet() (string, bool)
+	FlexibleScaleSet() (string, bool)
 	SetProviderID(string)
 	SetAddresses([]corev1.NodeAddress)
 	SetVMState(infrav1.ProvisioningState)
@@ -181,6 +182,12 @@ func (s *Service) Reconcile(ctx context.Context) error {
 		} else if vmSpec.Zone != "" {
 			zones := []string{vmSpec.Zone}
 			virtualMachine.Zones = &zones
+		}
+
+		if ssName, ok := s.Scope.FlexibleScaleSet(); ok {
+			virtualMachine.VirtualMachineScaleSet = &compute.SubResource{
+				ID: to.StringPtr(azure.FlexibleScaleSetID(s.Scope.SubscriptionID(), s.Scope.ResourceGroup(), ssName)),
+			}
 		}
 
 		if vmSpec.Identity == infrav1.VMIdentitySystemAssigned {

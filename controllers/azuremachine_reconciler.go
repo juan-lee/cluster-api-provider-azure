@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/publicips"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/resourceskus"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/roleassignments"
+	"sigs.k8s.io/cluster-api-provider-azure/azure/services/scalesets"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/tags"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/virtualmachines"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/vmextensions"
@@ -48,6 +49,7 @@ type azureMachineService struct {
 	tagsSvc              azure.Reconciler
 	vmExtensionsSvc      azure.Reconciler
 	availabilitySetsSvc  azure.Reconciler
+	flexibleScaleSetSvc  azure.Reconciler
 	skuCache             *resourceskus.Cache
 }
 
@@ -71,6 +73,7 @@ func newAzureMachineService(machineScope *scope.MachineScope) (*azureMachineServ
 		tagsSvc:              tags.New(machineScope),
 		vmExtensionsSvc:      vmextensions.New(machineScope),
 		availabilitySetsSvc:  availabilitysets.New(machineScope, cache),
+		flexibleScaleSetSvc:  scalesets.NewFlexible(machineScope, cache),
 		skuCache:             cache,
 	}, nil
 }
@@ -98,6 +101,10 @@ func (s *azureMachineService) Reconcile(ctx context.Context) error {
 
 	if err := s.availabilitySetsSvc.Reconcile(ctx); err != nil {
 		return errors.Wrap(err, "failed to create availability set")
+	}
+
+	if err := s.flexibleScaleSetSvc.Reconcile(ctx); err != nil {
+		return errors.Wrap(err, "failed to create flexible scale set")
 	}
 
 	if err := s.virtualMachinesSvc.Reconcile(ctx); err != nil {
@@ -148,5 +155,8 @@ func (s *azureMachineService) Delete(ctx context.Context) error {
 		return errors.Wrap(err, "failed to delete availability set")
 	}
 
+	if err := s.flexibleScaleSetSvc.Delete(ctx); err != nil {
+		return errors.Wrap(err, "failed to delete flexible scale set")
+	}
 	return nil
 }

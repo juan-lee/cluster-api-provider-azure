@@ -341,6 +341,20 @@ func (m *MachineScope) AvailabilitySet() (string, bool) {
 	return "", false
 }
 
+// FlexibleScaleSet returns the flexible scale set for this machine if available.
+func (m *MachineScope) FlexibleScaleSet() (string, bool) {
+	if m.AvailabilitySetEnabled() || m.IsControlPlane() {
+		return "", false
+	}
+
+	// get machine deployment name from labels for machines that maybe part of a machine deployment.
+	if mdName, ok := m.Machine.Labels[clusterv1.MachineDeploymentLabelName]; ok {
+		return mdName, true
+	}
+
+	return "", false
+}
+
 // SetProviderID sets the AzureMachine providerID in spec.
 func (m *MachineScope) SetProviderID(v string) {
 	m.AzureMachine.Spec.ProviderID = to.StringPtr(v)
