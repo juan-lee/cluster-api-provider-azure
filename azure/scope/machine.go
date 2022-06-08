@@ -23,7 +23,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2021-04-01/compute"
+	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2021-12-01/compute"
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/networkinterfaces"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/resourceskus"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/roleassignments"
+	"sigs.k8s.io/cluster-api-provider-azure/azure/services/scalegroups"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/virtualmachines"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/vmextensions"
 	"sigs.k8s.io/cluster-api-provider-azure/util/futures"
@@ -156,7 +157,7 @@ func (m *MachineScope) VMSpec() azure.ResourceSpecGetter {
 		Size:                   m.AzureMachine.Spec.VMSize,
 		OSDisk:                 m.AzureMachine.Spec.OSDisk,
 		DataDisks:              m.AzureMachine.Spec.DataDisks,
-		AvailabilitySetID:      m.AvailabilitySetID(),
+		ScaleGroupID:           m.ScaleGroupID(),
 		Zone:                   m.AvailabilityZone(),
 		Identity:               m.AzureMachine.Spec.Identity,
 		UserAssignedIdentities: m.AzureMachine.Spec.UserAssignedIdentities,
@@ -465,6 +466,57 @@ func (m *MachineScope) AvailabilitySetID() string {
 	return asID
 }
 
+// ScaleGroupSpec returns the availability set for this machine if available.
+func (m *MachineScope) ScaleGroupSpec() azure.ResourceSpecGetter {
+	availabilitySetName, ok := m.ScaleGroup()
+	if !ok {
+		return nil
+	}
+
+	spec := &scalegroups.FlexScaleSetSpec{
+		Name:           availabilitySetName,
+		ResourceGroup:  m.ResourceGroup(),
+		ClusterName:    m.ClusterName(),
+		Location:       m.Location(),
+		SKU:            nil,
+		AdditionalTags: m.AdditionalTags(),
+	}
+
+	if m.cache != nil {
+		spec.SKU = &m.cache.availabilitySetSKU
+	}
+
+	return spec
+}
+
+// ScaleGroup returns the availability set for this machine if available.
+func (m *MachineScope) ScaleGroup() (string, bool) {
+	if m.IsControlPlane() {
+		return azure.GenerateAvailabilitySetName(m.ClusterName(), azure.ControlPlaneNodeGroup), true
+	}
+
+	// get machine deployment name from labels for machines that maybe part of a machine deployment.
+	if mdName, ok := m.Machine.Labels[clusterv1.MachineDeploymentLabelName]; ok {
+		return azure.GenerateAvailabilitySetName(m.ClusterName(), mdName), true
+	}
+
+	// if machine deployment name label is not available, use machine set name.
+	if msName, ok := m.Machine.Labels[clusterv1.MachineSetLabelName]; ok {
+		return azure.GenerateAvailabilitySetName(m.ClusterName(), msName), true
+	}
+
+	return "", false
+}
+
+// ScaleGroupID returns the availability set for this machine, or "" if there is no availability set.
+func (m *MachineScope) ScaleGroupID() string {
+	var asID string
+	if asName, ok := m.ScaleGroup(); ok {
+		asID = azure.ScaleGroupID(m.SubscriptionID(), m.ResourceGroup(), asName)
+	}
+	return asID
+}
+
 // SetProviderID sets the AzureMachine providerID in spec.
 func (m *MachineScope) SetProviderID(v string) {
 	m.AzureMachine.Spec.ProviderID = to.StringPtr(v)
@@ -634,11 +686,11 @@ func (m *MachineScope) GetVMImage(ctx context.Context) (*infrav1.Image, error) {
 	if m.AzureMachine.Spec.OSDisk.OSType == azure.WindowsOS {
 		runtime := m.AzureMachine.Annotations["runtime"]
 		windowsServerVersion := m.AzureMachine.Annotations["windowsServerVersion"]
-		log.Info("No image specified for machine, using default Windows Image", "machine", m.AzureMachine.GetName(), "runtime", runtime, "windowsServerVersion", windowsServerVersion)
+		log.V(4).Info("No image specified for machine, using default Windows Image", "machine", m.AzureMachine.GetName(), "runtime", runtime, "windowsServerVersion", windowsServerVersion)
 		return azure.GetDefaultWindowsImage(to.String(m.Machine.Spec.Version), runtime, windowsServerVersion)
 	}
 
-	log.Info("No image specified for machine, using default Linux Image", "machine", m.AzureMachine.GetName())
+	log.V(4).Info("No image specified for machine, using default Linux Image", "machine", m.AzureMachine.GetName())
 	return azure.GetDefaultUbuntuImage(to.String(m.Machine.Spec.Version))
 }
 

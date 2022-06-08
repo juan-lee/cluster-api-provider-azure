@@ -20,7 +20,7 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2021-04-01/compute"
+	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2021-12-01/compute"
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/pkg/errors"
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
@@ -40,7 +40,7 @@ type VMSpec struct {
 	NICIDs                 []string
 	SSHKeyData             string
 	Size                   string
-	AvailabilitySetID      string
+	ScaleGroupID           string
 	Zone                   string
 	Identity               infrav1.VMIdentity
 	OSDisk                 infrav1.OSDisk
@@ -122,7 +122,7 @@ func (s *VMSpec) Parameters(existing interface{}) (params interface{}, err error
 		})),
 		VirtualMachineProperties: &compute.VirtualMachineProperties{
 			AdditionalCapabilities: s.generateAdditionalCapabilities(),
-			AvailabilitySet:        s.getAvailabilitySet(),
+			VirtualMachineScaleSet: s.getAvailabilitySet(),
 			HardwareProfile: &compute.HardwareProfile{
 				VMSize: compute.VirtualMachineSizeTypes(s.Size),
 			},
@@ -142,7 +142,7 @@ func (s *VMSpec) Parameters(existing interface{}) (params interface{}, err error
 			},
 		},
 		Identity: identity,
-		Zones:    s.getZones(),
+		// Zones:    s.getZones(),
 	}, nil
 }
 
@@ -319,8 +319,8 @@ func (s *VMSpec) generateAdditionalCapabilities() *compute.AdditionalCapabilitie
 
 func (s *VMSpec) getAvailabilitySet() *compute.SubResource {
 	var as *compute.SubResource
-	if s.AvailabilitySetID != "" {
-		as = &compute.SubResource{ID: &s.AvailabilitySetID}
+	if s.ScaleGroupID != "" {
+		as = &compute.SubResource{ID: &s.ScaleGroupID}
 	}
 	return as
 }

@@ -22,13 +22,13 @@ import (
 	"github.com/pkg/errors"
 	"sigs.k8s.io/cluster-api-provider-azure/azure"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/scope"
-	"sigs.k8s.io/cluster-api-provider-azure/azure/services/availabilitysets"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/disks"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/inboundnatrules"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/networkinterfaces"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/publicips"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/resourceskus"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/roleassignments"
+	"sigs.k8s.io/cluster-api-provider-azure/azure/services/scalegroups"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/tags"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/virtualmachines"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/vmextensions"
@@ -57,7 +57,8 @@ func newAzureMachineService(machineScope *scope.MachineScope) (*azureMachineServ
 			publicips.New(machineScope),
 			inboundnatrules.New(machineScope),
 			networkinterfaces.New(machineScope, cache),
-			availabilitysets.New(machineScope, cache),
+			// availabilitysets.New(machineScope, cache),
+			scalegroups.New(machineScope, cache),
 			disks.New(machineScope),
 			virtualmachines.New(machineScope),
 			roleassignments.New(machineScope),

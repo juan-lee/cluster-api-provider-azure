@@ -26,7 +26,17 @@ import (
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 )
 
-const codeResourceGroupNotFound = "ResourceGroupNotFound"
+const (
+	codeResourceGroupNotFound = "ResourceGroupNotFound"
+	codeOperationNotAllowed   = "OperationNotAllowed"
+)
+
+// OperationNotAllowed parses the error to check if it's a operation not allowed error.
+func OperationNotAllowed(err error) bool {
+	derr := autorest.DetailedError{}
+	serr := &azure.ServiceError{}
+	return errors.As(err, &derr) && errors.As(derr.Original, &serr) && serr.Code == codeOperationNotAllowed
+}
 
 // ResourceGroupNotFound parses the error to check if it's a resource group not found error.
 func ResourceGroupNotFound(err error) bool {

@@ -282,6 +282,11 @@ func AvailabilitySetID(subscriptionID, resourceGroup, availabilitySetName string
 	return fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/availabilitySets/%s", subscriptionID, resourceGroup, availabilitySetName)
 }
 
+// ScaleGroupID returns the azure resource ID for a given VM scale set.
+func ScaleGroupID(subscriptionID, resourceGroup, vmssName string) string {
+	return fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/virtualMachineScaleSets/%s", subscriptionID, resourceGroup, vmssName)
+}
+
 // GetDefaultImageSKUID gets the SKU ID of the image to use for the provided version of Kubernetes.
 // note: osAndVersion is expected to be in the format of {os}-{version} (ex: unbuntu-2004 or windows-2022)
 func getDefaultImageSKUID(k8sVersion, osAndVersion string) (string, error) {
