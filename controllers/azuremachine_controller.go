@@ -179,27 +179,10 @@ func (amr *AzureMachineReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	log = log.WithValues("cluster", cluster.Name)
 
 	log = log.WithValues("AzureCluster", cluster.Spec.InfrastructureRef.Name)
-	azureClusterName := client.ObjectKey{
-		Namespace: azureMachine.Namespace,
-		Name:      cluster.Spec.InfrastructureRef.Name,
-	}
-	azureCluster := &infrav1.AzureCluster{}
-	if err := amr.Client.Get(ctx, azureClusterName, azureCluster); err != nil {
-		amr.Recorder.Eventf(azureMachine, corev1.EventTypeNormal, "AzureCluster unavailable", "AzureCluster is not available yet")
-		log.Info("AzureCluster is not available yet")
-		return reconcile.Result{}, nil
-	}
 
-	// Create the cluster scope
-	clusterScope, err := scope.NewClusterScope(ctx, scope.ClusterScopeParams{
-		Client:       amr.Client,
-		Cluster:      cluster,
-		AzureCluster: azureCluster,
-		Timeouts:     amr.Timeouts,
-	})
+	clusterScope, err := GetClusterScoper(ctx, log, amr.Client, cluster, amr.Timeouts)
 	if err != nil {
-		amr.Recorder.Eventf(azureCluster, corev1.EventTypeWarning, "Error creating the cluster scope", err.Error())
-		return reconcile.Result{}, err
+		return reconcile.Result{}, errors.Wrapf(err, "failed to create cluster scope for cluster %s/%s", cluster.Namespace, cluster.Name)
 	}
 
 	// Create the machine scope
@@ -233,10 +216,10 @@ func (amr *AzureMachineReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// Handle non-deleted machines
-	return amr.reconcileNormal(ctx, machineScope, clusterScope)
+	return amr.reconcileNormal(ctx, machineScope, cluster)
 }
 
-func (amr *AzureMachineReconciler) reconcileNormal(ctx context.Context, machineScope *scope.MachineScope, clusterScope *scope.ClusterScope) (reconcile.Result, error) {
+func (amr *AzureMachineReconciler) reconcileNormal(ctx context.Context, machineScope *scope.MachineScope, cluster *clusterv1.Cluster) (reconcile.Result, error) {
 	ctx, log, done := tele.StartSpanWithLogger(ctx, "controllers.AzureMachineReconciler.reconcileNormal")
 	defer done()
 
@@ -258,7 +241,7 @@ func (amr *AzureMachineReconciler) reconcileNormal(ctx context.Context, machineS
 	}
 
 	// Make sure the Cluster Infrastructure is ready.
-	if !clusterScope.Cluster.Status.InfrastructureReady {
+	if !cluster.Status.InfrastructureReady {
 		log.Info("Cluster infrastructure is not ready yet")
 		conditions.MarkFalse(machineScope.AzureMachine, infrav1.VMRunningCondition, infrav1.WaitingForClusterInfrastructureReason, clusterv1.ConditionSeverityInfo, "")
 		return reconcile.Result{}, nil
@@ -363,7 +346,7 @@ func (amr *AzureMachineReconciler) reconcilePause(ctx context.Context, machineSc
 	return reconcile.Result{}, nil
 }
 
-func (amr *AzureMachineReconciler) reconcileDelete(ctx context.Context, machineScope *scope.MachineScope, clusterScope *scope.ClusterScope) (reconcile.Result, error) {
+func (amr *AzureMachineReconciler) reconcileDelete(ctx context.Context, machineScope *scope.MachineScope, clusterScoper ClusterScoper) (reconcile.Result, error) {
 	ctx, log, done := tele.StartSpanWithLogger(ctx, "controllers.AzureMachineReconciler.reconcileDelete")
 	defer done()
 
@@ -373,7 +356,7 @@ func (amr *AzureMachineReconciler) reconcileDelete(ctx context.Context, machineS
 		return reconcile.Result{}, err
 	}
 
-	if ShouldDeleteIndividualResources(ctx, clusterScope) {
+	if ShouldDeleteIndividualResources(ctx, clusterScoper) {
 		log.Info("Deleting AzureMachine")
 		ams, err := amr.createAzureMachineService(machineScope)
 		if err != nil {

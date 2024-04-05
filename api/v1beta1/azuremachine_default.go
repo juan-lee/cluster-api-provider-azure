@@ -239,9 +239,12 @@ func (m *AzureMachine) SetDefaults(client client.Client) error {
 		errs = append(errs, errors.Wrapf(err, "failed to fetch owner cluster for AzureMachine %s/%s", m.Namespace, m.Name))
 	}
 
-	subscriptionID, err := GetSubscriptionID(client, ownerAzureClusterName, ownerAzureClusterNamespace, 5)
-	if err != nil {
-		errs = append(errs, errors.Wrapf(err, "failed to fetch subscription ID for AzureMachine %s/%s", m.Namespace, m.Name))
+	var subscriptionID string
+	if m.Spec.Identity == VMIdentitySystemAssigned {
+		subscriptionID, err = GetSubscriptionID(client, ownerAzureClusterName, ownerAzureClusterNamespace, 5)
+		if err != nil {
+			errs = append(errs, errors.Wrapf(err, "failed to fetch subscription ID for AzureMachine %s/%s", m.Namespace, m.Name))
+		}
 	}
 
 	m.Spec.SetDefaultCachingType()

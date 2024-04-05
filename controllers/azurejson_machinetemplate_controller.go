@@ -24,11 +24,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
 	infrav1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
-	"sigs.k8s.io/cluster-api-provider-azure/azure/scope"
 	"sigs.k8s.io/cluster-api-provider-azure/azure/services/identities"
 	"sigs.k8s.io/cluster-api-provider-azure/util/reconciler"
 	"sigs.k8s.io/cluster-api-provider-azure/util/tele"
@@ -135,32 +133,10 @@ func (r *AzureJSONTemplateReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		log.Info("infra ref is nil")
 		return ctrl.Result{}, nil
 	}
-	if cluster.Spec.InfrastructureRef.Kind != infrav1.AzureClusterKind {
-		log.WithValues("kind", cluster.Spec.InfrastructureRef.Kind).Info("infra ref was not an AzureCluster")
-		return ctrl.Result{}, nil
-	}
 
-	// fetch the corresponding azure cluster
-	azureCluster := &infrav1.AzureCluster{}
-	azureClusterName := types.NamespacedName{
-		Namespace: req.Namespace,
-		Name:      cluster.Spec.InfrastructureRef.Name,
-	}
-
-	if err := r.Get(ctx, azureClusterName, azureCluster); err != nil {
-		log.Error(err, "failed to fetch AzureCluster")
-		return reconcile.Result{}, err
-	}
-
-	// Create the scope.
-	clusterScope, err := scope.NewClusterScope(ctx, scope.ClusterScopeParams{
-		Client:       r.Client,
-		Cluster:      cluster,
-		AzureCluster: azureCluster,
-		Timeouts:     r.Timeouts,
-	})
+	clusterScope, err := GetClusterScoper(ctx, log, r.Client, cluster, r.Timeouts)
 	if err != nil {
-		return reconcile.Result{}, errors.Wrap(err, "failed to create scope")
+		return reconcile.Result{}, errors.Wrapf(err, "failed to create cluster scope for cluster %s/%s", cluster.Namespace, cluster.Name)
 	}
 
 	apiVersion, kind := infrav1.GroupVersion.WithKind("AzureMachineTemplate").ToAPIVersionAndKind()
